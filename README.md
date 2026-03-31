@@ -125,7 +125,7 @@ Drop file into consume folder
    Happens in seconds.
         ↓
 2. paperless-gpt (:8080)
-   If the document has the paperless-gpt-auto tag:
+   If the document has the paperless-gpt-ocr-auto tag:
    re-OCRs it using minicpm-v:8b (vision LLM).
    Far better on scanned, handwritten, or tilted docs.
    ~1–2 min per page on CPU.
@@ -141,7 +141,7 @@ in the web UI:
 
 - Settings → Workflows → New
 - Trigger: **Document Added**
-- Action: **Assign tag** → `paperless-gpt-auto`
+- Action: **Assign tag** → `paperless-gpt-ocr-auto`
 
 ---
 
@@ -165,7 +165,7 @@ Car     /  Car Insurance, Service
 Work    /  Payslip, Employment
 
 Top-level: Bank, School, Munster, Hoflein, Heinl, Altenberg
-Special:   paperless-gpt-auto  ← triggers vision OCR
+Special:   paperless-gpt-ocr-auto  ← triggers vision OCR
 ```
 
 **Status** — a custom Select field with values:
@@ -272,7 +272,7 @@ If it shows `PASTE_YOUR_TOKEN_HERE`, update `.env`, then re-run `docker rm -f pa
 ### OCR quality is poor
 
 Tesseract struggles with scanned documents. Enable vision OCR by tagging the document
-with `paperless-gpt-auto` — or set up the Document Added workflow to auto-tag everything.
+with `paperless-gpt-ocr-auto` — or set up the Document Added workflow to auto-tag everything.
 
 ### Container name conflict on startup
 

@@ -24,12 +24,12 @@ if [[ "$CONTAINER_STATUS" != "running" ]]; then
 fi
 
 # ── Export ────────────────────────────────────────────────────────────────────
-echo "→ Exporting documents..."
+echo "--> Exporting documents..."
 docker exec paperless document_exporter /usr/src/paperless/export
-echo "  ↳ Export written to $EXPORT_DIR"
+echo "  -->  Export written to $EXPORT_DIR"
 
 # ── Copy to Dropbox ───────────────────────────────────────────────────────────
-echo "→ Copying to Dropbox..."
+echo "--> Copying to Dropbox..."
 DROPBOX_ROOT="/mnt/c/Users/${DROPBOX_USER}/Dropbox"
 if [[ ! -d "$DROPBOX_ROOT" ]]; then
   echo "ERROR: Dropbox not reachable at $DROPBOX_ROOT"
@@ -39,8 +39,8 @@ fi
 
 mkdir -p "$DEST"
 cp -r "$EXPORT_DIR/." "$DEST/"
-echo "  ↳ Backed up to $DEST"
+echo "  -->  Backed up to $DEST"
 
 echo ""
-echo "✓ Backup complete: $DEST"
+echo "[OK] Backup complete: $DEST"
 echo ""

@@ -45,8 +45,8 @@ echo ""
 
 # ── Service URLs ──────────────────────────────────────────────────────────────
 echo "Services"
-echo "  Paperless-ngx  →  http://localhost:${PAPERLESS_PORT}"
-echo "  Paperless-AI   →  http://localhost:${AI_PORT}"
-echo "  Paperless-GPT  →  http://localhost:${GPT_PORT}"
-echo "  Ollama         →  http://localhost:11434"
+echo "  Paperless-ngx  -->  http://localhost:${PAPERLESS_PORT}"
+echo "  Paperless-AI   -->  http://localhost:${AI_PORT}"
+echo "  Paperless-GPT  -->  http://localhost:${GPT_PORT}"
+echo "  Ollama         -->  http://localhost:11434"
 echo ""

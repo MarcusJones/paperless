@@ -24,28 +24,28 @@ if [[ "$confirm" != "yes" ]]; then
 fi
 echo ""
 
-echo "→ Stopping containers..."
+echo "--> Stopping containers..."
 for (( i=${#CONTAINERS[@]}-1; i>=0; i-- )); do
   c="${CONTAINERS[$i]}"
-  docker stop "$c" 2>/dev/null && echo "  ↳ stopped $c" || true
+  docker stop "$c" 2>/dev/null && echo "  -->  stopped $c" || true
 done
 
-echo "→ Removing containers..."
+echo "--> Removing containers..."
 for c in "${CONTAINERS[@]}"; do
-  docker rm "$c" 2>/dev/null && echo "  ↳ removed $c" || true
+  docker rm "$c" 2>/dev/null && echo "  -->  removed $c" || true
 done
 
-echo "→ Removing network..."
-docker network rm "$NETWORK" 2>/dev/null && echo "  ↳ removed $NETWORK" || true
+echo "--> Removing network..."
+docker network rm "$NETWORK" 2>/dev/null && echo "  -->  removed $NETWORK" || true
 
-echo "→ Removing volumes..."
+echo "--> Removing volumes..."
 for v in "${VOLUMES[@]}"; do
-  docker volume rm "$v" 2>/dev/null && echo "  ↳ removed $v" || true
+  docker volume rm "$v" 2>/dev/null && echo "  -->  removed $v" || true
 done
 
-echo "→ Stopping Ollama..."
-pkill -f 'ollama serve' 2>/dev/null && echo "  ↳ Stopped" || echo "  ↳ Was not running"
+echo "--> Stopping Ollama..."
+pkill -f 'ollama serve' 2>/dev/null && echo "  -->  Stopped" || echo "  -->  Was not running"
 
 echo ""
-echo "✓ Fully removed. Run ./setup.sh to start fresh."
+echo "[OK] Fully removed. Run ./setup.sh to start fresh."
 echo ""

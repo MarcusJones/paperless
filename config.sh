@@ -71,6 +71,12 @@ PG_USER="paperless"
 # Must match the username you create with: docker exec -it paperless python3 manage.py createsuperuser
 PAPERLESS_ADMIN_USER="admin"
 
+# ── AI tagging ────────────────────────────────────────────────────────────
+# Content tags that paperless-ai is allowed to assign.
+# MUST NOT include workflow tags like paperless-gpt-ocr-auto.
+# Keep in sync with bootstrap.sh when you add/remove tags.
+PROMPT_TAGS="Finance,Tax,Insurance,Banking,Housing,Rent,Utilities,Health,Medical,Dental,health-xnc,health-ms,health-po,Car,Car Insurance,Service,Work,Payslip,Employment,Bank,School,Munster,Hoflein,Heinl,Altenberg"
+
 # ── Ollama ────────────────────────────────────────────────────────────────────
 OLLAMA_MODEL="llama3.1"
 OLLAMA_VISION_MODEL="minicpm-v:8b"
