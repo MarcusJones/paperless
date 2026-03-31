@@ -106,7 +106,7 @@ _MANAGED_KEYS=(
 )
 
 # Build the managed config block
-_MANAGED_CONFIG="PAPERLESS_API_URL=http://paperless:8000
+_MANAGED_CONFIG="PAPERLESS_API_URL=http://paperless:8000/api
 PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
 PAPERLESS_NGX_URL=http://paperless:8000
 PAPERLESS_URL=http://paperless:8000
