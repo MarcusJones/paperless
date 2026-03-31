@@ -33,7 +33,7 @@ for c in "${CONTAINERS[@]}"; do
   if docker container inspect "$c" &>/dev/null 2>&1; then
     color="${COLORS[$((i % ${#COLORS[@]}))]}"
     docker logs -f --tail=20 "$c" 2>&1 | sed "s/^/$(printf "\033[${color};1m")[${c}]$(printf "\033[0m") /" &
-    ((i++))
+    (( ++i ))
   else
     echo "  SKIP: $c not found (run ./setup.sh)"
   fi
