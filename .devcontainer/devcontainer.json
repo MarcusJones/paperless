@@ -1,0 +1,46 @@
+{
+  "name": "Paperless stack",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "ms-azuretools.vscode-docker",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "workbench.colorCustomizations": {
+          "titleBar.activeBackground": "#17541f",
+          "titleBar.activeForeground": "#ffffff",
+          "activityBar.background": "#1a3d1f",
+          "statusBar.background": "#000000",
+          "statusBar.foreground": "#5ac710",
+          "tab.activeBackground": "#17541f"
+        }
+      }
+    }
+  },
+  "runArgs": [
+    "--env-file",
+    "/mnt/c/git/agentic-central/.env"
+  ],
+  "mounts": [
+    "source=/mnt/c/git/agentic-central,target=/agentic-central,type=bind,consistency=cached",
+    "source=/mnt/c/Users/m.jones/Pictures/Screenshots,target=/screenshots,type=bind,consistency=cached",
+  ],
+  "postStartCommand": "bash .devcontainer/post-start.sh ${containerWorkspaceFolder}",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true
+}

@@ -1,0 +1,12 @@
+.claude
+.screenshots
+
+# Secrets — never commit
+.env
+
+# Document data directories — large, not source-controlled
+export/
+consume/
+
+# paperless-ai runtime data
+paperless-ai-data/
