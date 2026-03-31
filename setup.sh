@@ -6,8 +6,8 @@
 #
 # After first run:
 #   1. docker exec -it paperless python3 manage.py createsuperuser
-#   2. Log in → username → My Profile → copy API token
-#   3. Paste token into .env → PAPERLESS_API_TOKEN
+#   2. Log in ->username ->My Profile ->copy API token
+#   3. Paste token into .env ->PAPERLESS_API_TOKEN
 #   4. docker rm -f paperless-gpt paperless-ai && ./setup.sh   (rebuild with the real token)
 #   5. ./bootstrap.sh              (create taxonomy)
 set -euo pipefail
@@ -40,27 +40,27 @@ if [[ "${PAPERLESS_API_TOKEN}" == "PASTE_YOUR_TOKEN_HERE" ]]; then
 fi
 
 # ── Directories ───────────────────────────────────────────────────────────────
-echo "→ Creating directories..."
+echo "--> Creating directories..."
 mkdir -p "$CONSUME_DIR" "$EXPORT_DIR" "$AI_DATA_DIR"
-echo "  ↳ $CONSUME_DIR"
-echo "  ↳ $EXPORT_DIR"
-echo "  ↳ $AI_DATA_DIR"
+echo "  -->  $CONSUME_DIR"
+echo "  -->  $EXPORT_DIR"
+echo "  -->  $AI_DATA_DIR"
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
 echo ""
-echo "→ Starting Ollama..."
+echo "--> Starting Ollama..."
 
 # Kill the systemd service if it somehow got re-enabled — it uses a different
 # model directory which causes models to appear and vanish unpredictably.
 if systemctl is-active ollama &>/dev/null 2>&1; then
-  echo "  ↳ Stopping systemd ollama (ghost-model prevention)..."
+  echo "  -->  Stopping systemd ollama (ghost-model prevention)..."
   sudo systemctl stop ollama
   sudo systemctl disable ollama 2>/dev/null || true
 fi
 
 if ! curl -sf http://localhost:11434/api/tags &>/dev/null; then
-  nohup env OLLAMA_HOST=0.0.0.0 ollama serve &>/dev/null &
-  echo -n "  ↳ Waiting for Ollama to be ready"
+  nohup env OLLAMA_HOST=0.0.0.0 OLLAMA_MAX_LOADED_MODELS=2 OLLAMA_KEEP_ALIVE=30m ollama serve &>/dev/null &
+  echo -n "  -->  Waiting for Ollama to be ready"
   for i in $(seq 1 10); do
     sleep 2
     if curl -sf http://localhost:11434/api/tags &>/dev/null; then
@@ -75,23 +75,38 @@ if ! curl -sf http://localhost:11434/api/tags &>/dev/null; then
     fi
   done
 else
-  echo "  ↳ Already running (PID $(pgrep -f 'ollama serve' || echo '?'))"
+  echo "  -->  Already running (PID $(pgrep -f 'ollama serve' || echo '?'))"
 fi
 
 for model in "$OLLAMA_MODEL" "$OLLAMA_VISION_MODEL"; do
   if ollama list 2>/dev/null | grep -q "^${model}"; then
-    echo "  ↳ $model already present"
+    echo "  -->  $model already present"
   else
-    echo "  ↳ Pulling $model (this may take several minutes on first run)..."
+    echo "  -->  Pulling $model (this may take several minutes on first run)..."
     ollama pull "$model"
   fi
 done
 
 # ── paperless-ai config ───────────────────────────────────────────────────────
 echo ""
-echo "→ Writing paperless-ai config..."
-cat > "$AI_DATA_DIR/.env" <<EOF
-PAPERLESS_API_URL=http://paperless:8000
+echo "--> Writing paperless-ai config..."
+
+# These are the values we manage. The setup wizard may add additional keys
+# (e.g. SETUP_USERNAME, SETUP_PASSWORD) that we must preserve.
+_MANAGED_KEYS=(
+  PAPERLESS_API_URL PAPERLESS_API_TOKEN PAPERLESS_NGX_URL PAPERLESS_URL
+  PAPERLESS_HOST PAPERLESS_TOKEN PAPERLESS_APIKEY PAPERLESS_USERNAME
+  AI_PROVIDER OLLAMA_API_URL OLLAMA_MODEL OLLAMA_MODEL_NAME
+  SCAN_INTERVAL ADD_AI_PROCESSED_TAG AI_PROCESSED_TAG_NAME
+  USE_PROMPT_TAGS PROMPT_TAGS
+  RESTRICT_TO_EXISTING_TAGS RESTRICT_TO_EXISTING_DOCUMENT_TYPES
+  RESTRICT_TO_EXISTING_CORRESPONDENTS USE_EXISTING_DATA
+  PROCESS_PREDEFINED_DOCUMENTS PAPERLESS_AI_INITIAL_SETUP
+  TAGS ACTIVATE_TAGGING ACTIVATE_DOCUMENT_TYPE ACTIVATE_CORRESPONDENTS ACTIVATE_TITLE
+)
+
+# Build the managed config block
+_MANAGED_CONFIG="PAPERLESS_API_URL=http://paperless:8000
 PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
 PAPERLESS_NGX_URL=http://paperless:8000
 PAPERLESS_URL=http://paperless:8000
@@ -105,45 +120,73 @@ OLLAMA_MODEL=${OLLAMA_MODEL}
 OLLAMA_MODEL_NAME=${OLLAMA_MODEL}
 SCAN_INTERVAL=*/5 * * * *
 ADD_AI_PROCESSED_TAG=yes
+AI_PROCESSED_TAG_NAME=ai-processed
 USE_PROMPT_TAGS=yes
-RESTRICT_TAGS=yes
-RESTRICT_DOCUMENT_TYPES=yes
-RESTRICT_CORRESPONDENTS=no
+PROMPT_TAGS=${PROMPT_TAGS}
+RESTRICT_TO_EXISTING_TAGS=yes
+RESTRICT_TO_EXISTING_DOCUMENT_TYPES=yes
+RESTRICT_TO_EXISTING_CORRESPONDENTS=no
 USE_EXISTING_DATA=no
-PROCESS_PREDEFINED_DOCUMENTS=no
+PROCESS_PREDEFINED_DOCUMENTS=yes
+TAGS=ai-process
 PAPERLESS_AI_INITIAL_SETUP=no
-TAGS=true
-DOCUMENT_TYPES=true
-CORRESPONDENTS=true
-TITLE=true
-CREATED_DATE=true
-EOF
-echo "  ↳ Written to $AI_DATA_DIR/.env"
+ACTIVATE_TAGGING=yes
+ACTIVATE_DOCUMENT_TYPE=yes
+ACTIVATE_CORRESPONDENTS=yes
+ACTIVATE_TITLE=yes"
+
+AI_ENV="$AI_DATA_DIR/.env"
+if [[ -f "$AI_ENV" ]]; then
+  # Preserve keys written by the setup wizard (anything we don't manage)
+  _WIZARD_LINES=""
+  while IFS= read -r line; do
+    # Skip blanks and comments
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    key="${line%%=*}"
+    # Keep the line only if it's NOT one of our managed keys
+    _keep=true
+    for mk in "${_MANAGED_KEYS[@]}"; do
+      if [[ "$key" == "$mk" ]]; then _keep=false; break; fi
+    done
+    if $_keep; then _WIZARD_LINES+="$line"$'\n'; fi
+  done < "$AI_ENV"
+  echo "$_MANAGED_CONFIG" > "$AI_ENV"
+  # Append wizard-managed keys (username, password, etc.)
+  if [[ -n "$_WIZARD_LINES" ]]; then
+    echo "" >> "$AI_ENV"
+    echo "# -- Preserved from setup wizard --" >> "$AI_ENV"
+    printf '%s' "$_WIZARD_LINES" >> "$AI_ENV"
+  fi
+  echo "  -->  Updated $AI_ENV (wizard settings preserved)"
+else
+  echo "$_MANAGED_CONFIG" > "$AI_ENV"
+  echo "  -->  Written to $AI_ENV (first run -- complete setup at http://localhost:${AI_PORT}/setup)"
+fi
 
 # ── Docker network ────────────────────────────────────────────────────────────
 echo ""
-echo "→ Docker network..."
+echo "--> Docker network..."
 if docker network inspect "$NETWORK" &>/dev/null; then
-  echo "  ↳ $NETWORK already exists"
+  echo "  -->  $NETWORK already exists"
 else
   docker network create "$NETWORK" >/dev/null
-  echo "  ↳ Created $NETWORK"
+  echo "  -->  Created $NETWORK"
 fi
 
 # ── Helper: run a container only if it doesn't already exist ──────────────────
 create_if_absent() {
   local name="$1"; shift
   if docker container inspect "$name" &>/dev/null 2>&1; then
-    echo "  ↳ $name already exists — skipping"
+    echo "  -->  $name already exists — skipping"
     return
   fi
   docker run -d --name "$name" "$@" >/dev/null
-  echo "  ↳ Created $name"
+  echo "  -->  Created $name"
 }
 
 # ── Containers ────────────────────────────────────────────────────────────────
 echo ""
-echo "→ Creating containers..."
+echo "--> Creating containers..."
 
 create_if_absent paperless-redis \
   --add-host host.docker.internal:host-gateway \
@@ -227,21 +270,26 @@ create_if_absent paperless-gpt \
   -e VISION_LLM_PROVIDER=ollama \
   -e VISION_LLM_MODEL="$OLLAMA_VISION_MODEL" \
   -e PAPERLESS_PUBLIC_URL="http://localhost:${PAPERLESS_PORT}" \
+  -e AUTO_TAG="" \
+  -e MANUAL_TAG="" \
+  -e AUTO_OCR_TAG="paperless-gpt-ocr-auto" \
+  -e PDF_OCR_TAGGING=true \
+  -e PDF_OCR_COMPLETE_TAG=ocr-complete \
   icereed/paperless-gpt:latest
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
-echo "✓ Setup complete"
+echo "[OK] Setup complete"
 echo ""
-echo "  Paperless-ngx  →  http://localhost:${PAPERLESS_PORT}"
-echo "  Paperless-AI   →  http://localhost:${AI_PORT}"
-echo "  Paperless-GPT  →  http://localhost:${GPT_PORT}"
-echo "  Ollama         →  http://localhost:11434"
+echo "  Paperless-ngx  -->  http://localhost:${PAPERLESS_PORT}"
+echo "  Paperless-AI   -->  http://localhost:${AI_PORT}"
+echo "  Paperless-GPT  -->  http://localhost:${GPT_PORT}"
+echo "  Ollama         -->  http://localhost:11434"
 echo ""
 echo "Next steps:"
 echo "  1. docker exec -it paperless python3 manage.py createsuperuser"
-echo "  2. Log in → username (top-right) → My Profile → copy API token"
-echo "  3. Paste token into .env → PAPERLESS_API_TOKEN"
+echo "  2. Log in ->username (top-right) ->My Profile ->copy API token"
+echo "  3. Paste token into .env ->PAPERLESS_API_TOKEN"
 echo "  4. docker rm -f paperless-gpt paperless-ai && ./setup.sh   (rebuild with the real token)"
 echo "  5. ./bootstrap.sh              (create tags, types, custom fields)"
 echo ""

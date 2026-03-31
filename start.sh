@@ -17,11 +17,11 @@ if systemctl is-active ollama &>/dev/null 2>&1; then
 fi
 
 if curl -sf http://localhost:11434/api/tags &>/dev/null; then
-  echo "→ Ollama already running (PID $(pgrep -f 'ollama serve' || echo '?'))"
+  echo "--> Ollama already running (PID $(pgrep -f 'ollama serve' || echo '?'))"
 else
-  echo "→ Starting Ollama..."
-  nohup env OLLAMA_HOST=0.0.0.0 ollama serve &>/dev/null &
-  echo -n "  ↳ Waiting"
+  echo "--> Starting Ollama..."
+  nohup env OLLAMA_HOST=0.0.0.0 OLLAMA_MAX_LOADED_MODELS=2 OLLAMA_KEEP_ALIVE=30m ollama serve &>/dev/null &
+  echo -n "  -->  Waiting"
   for i in $(seq 1 10); do
     sleep 2
     if curl -sf http://localhost:11434/api/tags &>/dev/null; then
@@ -38,20 +38,20 @@ else
 fi
 
 # ── Containers ────────────────────────────────────────────────────────────────
-echo "→ Starting containers..."
+echo "--> Starting containers..."
 for c in "${CONTAINERS[@]}"; do
   if ! docker container inspect "$c" &>/dev/null; then
     echo "  ERROR: $c not found — run ./setup.sh first"
     exit 1
   fi
   docker start "$c" >/dev/null
-  echo "  ↳ $c"
+  echo "  -->  $c"
 done
 
 echo ""
-echo "✓ Stack is up"
+echo "[OK] Stack is up"
 echo ""
-echo "  Paperless-ngx  →  http://localhost:${PAPERLESS_PORT}"
-echo "  Paperless-AI   →  http://localhost:${AI_PORT}"
-echo "  Paperless-GPT  →  http://localhost:${GPT_PORT}"
+echo "  Paperless-ngx  -->  http://localhost:${PAPERLESS_PORT}"
+echo "  Paperless-AI   -->  http://localhost:${AI_PORT}"
+echo "  Paperless-GPT  -->  http://localhost:${GPT_PORT}"
 echo ""
