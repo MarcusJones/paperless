@@ -103,6 +103,7 @@ _MANAGED_KEYS=(
   RESTRICT_TO_EXISTING_CORRESPONDENTS USE_EXISTING_DATA
   PROCESS_PREDEFINED_DOCUMENTS PAPERLESS_AI_INITIAL_SETUP
   TAGS ACTIVATE_TAGGING ACTIVATE_DOCUMENT_TYPE ACTIVATE_CORRESPONDENTS ACTIVATE_TITLE
+  SYSTEM_PROMPT
 )
 
 # Build the managed config block
@@ -162,6 +163,8 @@ else
   echo "$_MANAGED_CONFIG" > "$AI_ENV"
   echo "  -->  Written to $AI_ENV (first run -- complete setup at http://localhost:${AI_PORT}/setup)"
 fi
+# Append SYSTEM_PROMPT — multi-line in config.sh, stored as single line with \n for dotenv
+printf 'SYSTEM_PROMPT="%s"\n' "${AI_SYSTEM_PROMPT//$'\n'/\\n}" >> "$AI_ENV"
 
 # ── Docker network ────────────────────────────────────────────────────────────
 echo ""

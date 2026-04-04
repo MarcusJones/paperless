@@ -71,6 +71,23 @@ get_id_by_name() {
     | grep -o '"id":[0-9]*' | grep -o '[0-9]*' || true
 }
 
+# set_tag_matching <name> <algorithm> <match_string>
+# PATCHes an existing tag with an automatic matching rule.
+# Algorithms: 0=none 1=any-word 2=all-words 3=literal 4=regex 5=fuzzy
+set_tag_matching() {
+  local name="$1"
+  local algorithm="$2"
+  local match="$3"
+  local id
+  id=$(get_id_by_name "tags" "$name")
+  if [[ -z "$id" ]]; then
+    echo "ERROR: Tag '${name}' not found for matching setup" >&2
+    exit 1
+  fi
+  curl -sf --max-time 10 -X PATCH "${API}/tags/${id}/" "${H[@]}" \
+    -d "{\"matching_algorithm\":${algorithm},\"match\":\"${match}\",\"is_insensitive\":true}" >/dev/null
+}
+
 # create_tag <name> [parent_id]
 # Creates a tag (or finds existing) and returns its id.
 create_tag() {
@@ -140,6 +157,10 @@ for tag in "Bank" "School" "Munster" "Hoflein" "Heinl" "Altenberg"; do
   create_tag "$tag" >/dev/null
   echo "  -> $tag"
 done
+
+# Tag matching rules — deterministic auto-tagging independent of AI
+set_tag_matching "Altenberg" 3 "St. Andra-Wörden"
+echo "  -> Altenberg: match literal 'St. Andra-Wörden'"
 
 create_tag "paperless-gpt-ocr-auto" >/dev/null
 echo "  -> paperless-gpt-ocr-auto (vision OCR trigger -- OCR only, no tagging)"

@@ -8,6 +8,9 @@ WORKSPACE="${1:?Error: containerWorkspaceFolder not provided as argument}"
 
 echo "=================================="
 
+echo "Creating .claude symlink..."
+ln -sfn /agentic-central "${WORKSPACE}/.claude"
+
 mkdir -p ~/.claude
 cp /agentic-central/claude.json ~/.claude.json 2>/dev/null || true
 cp /agentic-central/claude.home.settings.json ~/.claude/settings.json 2>/dev/null || true

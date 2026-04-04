@@ -322,6 +322,16 @@ and Ollama must bind to `0.0.0.0` (not `127.0.0.1`) to accept those connections.
 
 ---
 
+## References
+
+- [YouTube: Paperless-ngx setup walkthrough](https://www.youtube.com/watch?v=NMAwHjleqHg)
+- [Paperless-ngx docs](https://docs.paperless-ngx.com)
+- [paperless-ai (clusterzx)](https://github.com/clusterzx/paperless-ai)
+- [paperless-gpt (icereed)](https://github.com/icereed/paperless-gpt)
+- [Ollama](https://ollama.com)
+
+---
+
 ## Backup schedule (optional cron)
 
 Add to your crontab (`crontab -e`) to auto-backup every Sunday at 03:00:
