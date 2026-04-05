@@ -1,12 +1,23 @@
 .claude
 .screenshots
 
-# Secrets — never commit
-.env
+# Secrets — never commit (root .env only; service <name>/.env files are safe to commit)
+/.env
 
-# Document data directories — large, not source-controlled
+# Bind-mount data directories — large runtime state, not source-controlled
+paperless/data/
+paperless/media/
+paperless/export/
+paperless/consume/
+postgres/data/
+redis/data/
+paperless-ai-next/data/
+open-webui/data/
+
+# Migration export staging area (may be large)
+migration-export/
+
+# Old pre-compose runtime state
+paperless-ai-data/
 export/
 consume/
-
-# paperless-ai runtime data
-paperless-ai-data/

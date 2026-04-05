@@ -4,164 +4,247 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Docker-based Paperless-ngx document management system with AI tagging, running locally in WSL2. The repo is a collection of Bash scripts that orchestrate 7 Docker containers + Ollama for a document ingestion → OCR → AI classification pipeline.
+Docker-based Paperless-ngx document management system with AI tagging, running locally in WSL2. The repo is a `compose.yaml` + folder-per-service layout that orchestrates 9 Docker containers + Ollama (on host) for a document ingestion → vision OCR → AI classification pipeline.
 
 ## Tech Stack
 
 - **Core:** Paperless-ngx (document storage, Tesseract OCR, web UI)
-- **AI Tagging:** paperless-ai (clusterzx/paperless-ai) → polls documents, sends to Ollama llama3.1 for title/tags/correspondent/type
-- **Vision OCR:** paperless-gpt (icereed/paperless-gpt) → re-OCRs scanned docs using minicpm-v:8b vision model
+- **AI Classification:** paperless-ai-next (admonstrator/paperless-ai-next) → webhook-triggered, sends to Ollama qwen3:14b for title/tags/correspondent/type
+- **Vision OCR:** paperless-gpt (icereed/paperless-gpt) → re-OCRs scanned docs using qwen3-vl:8b vision model
 - **LLM Host:** Ollama running on WSL host (not in Docker), bound to `0.0.0.0:11434`
 - **Database:** PostgreSQL 16 + Redis 7 (task queue)
 - **Doc Processing:** Apache Tika (office extraction) + Gotenberg (PDF rendering)
-- **Language:** Bash (all scripts), no application code in this repo
+- **Monitoring:** Dozzle (log viewer at :9999), Open WebUI (Ollama management at :3001)
+- **Language:** Bash (operational scripts only), no application code in this repo
 
 ## Architecture
 
 ### Document Pipeline (3 stages)
 
-**⚠️ Pipeline chaining is not yet fully implemented.** See `tasks/prd-ai-tagging-pipeline.md` for the active PRD. Current status: each stage runs independently; the tag-driven handoff between paperless-gpt and paperless-ai is in-progress.
+```
+┌─────────────┐  tag   ┌──────────────────┐  webhook  ┌───────────────────┐
+│  Stage 1    │───────▶│   Stage 2        │──────────▶│   Stage 3         │
+│  INGEST     │        │   VISION OCR     │           │   AI CLASSIFY     │
+│  paperless  │        │   paperless-gpt  │           │  paperless-ai-next│
+└─────────────┘        └──────────────────┘           └───────────────────┘
+     Tesseract              qwen3-vl:8b                    qwen3:14b
+     auto on ingest         fast continuous poll           webhook-triggered
+```
 
-1. **Paperless-ngx** (:8000) — ingests files from Dropbox consume folder, runs Tesseract OCR, stores in Postgres
-2. **paperless-gpt** (:8080) — if document has `paperless-gpt-ocr-auto` tag, re-OCRs with vision LLM (minicpm-v:8b). ~1-2 min/page on CPU
-3. **paperless-ai** (:3000) — polls every 5 min, sends text to llama3.1 via Ollama, assigns title/tags/correspondent/document type
+1. **Paperless-ngx** (:8000) — ingests from Dropbox consume folder, runs Tesseract OCR
+   - Workflow "Auto Vision OCR": assigns `paperless-gpt-ocr-auto` tag to every new document
+2. **paperless-gpt** (:8080) — detects `paperless-gpt-ocr-auto`, runs vision OCR, then adds `ai-process` tag
+3. **paperless-ai-next** (:3000) — webhook-triggered on `ai-process` tag; fallback cron every 5 min
 
-### Container Start Order (defined in `config.sh:CONTAINERS`)
+**Model swap:** qwen3-vl:8b → qwen3:14b adds ~10-20s between Stage 2 and 3. Both models cannot coexist in 12GB VRAM simultaneously (`OLLAMA_MAX_LOADED_MODELS=1`).
 
-`paperless-redis` → `paperless-db` → `paperless-tika` → `paperless-gotenberg` → `paperless` → `paperless-ai` → `paperless-gpt`
+### Service Dependencies (compose.yaml)
 
-Stop order is reversed (consumers before dependencies).
+```
+redis ──┐
+postgres ──┤
+tika ──┤──▶ paperless ──▶ paperless-ai-next
+gotenberg ──┘          └──▶ paperless-gpt
+
+(paperless-ai-next and paperless-gpt wait for paperless: service_healthy)
+
+open-webui  ──▶ Ollama on host (independent)
+dozzle      ──▶ Docker socket (read-only)
+```
 
 ### Networking
 
-Containers talk to each other via Docker network `paperless`. Containers reach Ollama on the WSL host via `172.17.0.1:11434` (Docker bridge gateway), NOT localhost. Ollama must bind `0.0.0.0`.
+Containers communicate on the default compose network. Services reaching Ollama use `http://host.docker.internal:11434` (via `extra_hosts: host-gateway`) — NOT hardcoded `172.17.0.1`.
 
-### Configuration Split
+### Configuration Layout
 
-- **`config.sh`** — all non-secret config (ports, paths, models, container list, tag taxonomy). Every script sources this.
-- **`.env`** — secrets only: `PAPERLESS_API_TOKEN`, `DROPBOX_USER`, `SECRET_KEY`, `PG_PASSWORD`. Never committed.
-- **`bootstrap.sh`** — creates taxonomy via Paperless REST API (tags, document types, Status custom field, storage path). Idempotent.
+```
+compose.yaml          — all 9 services
+.env                  — SECRETS ONLY (gitignored): API token, PG password, secret key, Dropbox user, AI next API key
+.env.example          — template for .env (committed)
+
+paperless/.env        — non-secret paperless config (OCR, DB coords, ports, locale)
+postgres/.env         — DB name + user (password from root .env)
+paperless-ai-next/.env — AI config: model, SYSTEM_PROMPT, PROMPT_TAGS, scan interval
+paperless-gpt/.env    — OCR config: model, trigger tag, completion tag
+
+scripts/              — operational scripts (compose-aware)
+scripts-archive/      — old pre-compose scripts (reference only)
+```
 
 ### Key Paths
 
-- Consume dir: `/mnt/c/Users/$DROPBOX_USER/Dropbox/paperless-consume` (WSL2 bridge to Windows Dropbox)
-- Export dir: `~/paperless-ngx/export`
-- AI config: `~/paperless-ai-data/.env` (written by `setup.sh`, preserves wizard-added keys)
-- Docker volumes: `paperless-pgdata`, `paperless-data`, `paperless-media`
+- Consume dir: `./paperless/consume/` → symlink to `/mnt/c/Users/$DROPBOX_USER/Dropbox/paperless-consume`
+- Export dir: `./paperless/export/` (bind-mounted, inspectable with `ls`)
+- Data dirs: `./paperless/data/`, `./paperless/media/`, `./postgres/data/`, `./redis/data/` (all gitignored)
+- AI state: `./paperless-ai-next/data/` (bind-mounted, includes logs.html)
 
 ## Scripts Reference
 
-| Script         | Purpose                                                        |
-| -------------- | -------------------------------------------------------------- |
-| `setup.sh`     | First-time: starts Ollama, pulls models, creates all containers |
-| `start.sh`     | Daily: starts Ollama + all containers                          |
-| `stop.sh`      | Daily: stops containers (reverse order) + kills Ollama         |
-| `remove.sh`    | DESTRUCTIVE: removes containers, network, volumes (prompts)    |
-| `bootstrap.sh` | Creates taxonomy via API (tags, types, Status field, paths)    |
-| `status.sh`    | Health check: Ollama PID, container states, service URLs       |
-| `backup.sh`    | Exports docs + copies to Dropbox (timestamped)                 |
-| `logs.sh`      | Tails all container logs with color-coded prefixes             |
-| `diagnose.sh`  | Pipeline diagnostics: 10-check pass/fail for all prerequisites |
-| `config.sh`    | Sourced by all scripts — central config, not run directly      |
+| Script | Purpose |
+|--------|---------|
+| `scripts/bootstrap.sh` | Creates taxonomy via Paperless REST API (tags, types, Status field, storage path). Idempotent. |
+| `scripts/diagnose.sh` | 10-check pipeline health: Ollama, models, container connectivity, tags, LLM smoke test |
+| `scripts/backup.sh` | Exports docs with `document_exporter` + copies to Dropbox (timestamped) |
+| `scripts/pipeline-timing.sh` | Tails compose logs and prints per-document stage timing (ingest, OCR, classify, swap, total) |
+
+Old scripts are in `scripts-archive/` — kept for reference, no longer used for daily ops.
+
+## Daily Operations (run on WSL host)
+
+```bash
+# Start full stack
+docker compose up -d
+
+# Stop (data preserved in bind-mount dirs)
+docker compose down
+
+# Tail all logs with timestamps
+docker compose logs -f --timestamps
+
+# Per-document pipeline timing
+./scripts/pipeline-timing.sh
+
+# Pipeline health check
+./scripts/diagnose.sh
+
+# Backup to Dropbox
+./scripts/backup.sh
+
+# See all container states
+docker compose ps
+
+# Exec into a container
+docker compose exec paperless python3 manage.py shell
+```
 
 ## AI Tagging Pipeline — Integration Guide
 
-### How the Three AI Components Connect
+### How the Components Connect
 
 ```
 Paperless-ngx (:8000)        — REST API, stores documents + metadata
        ↕ API (Token auth)
-paperless-gpt (:8080)        — polls by tag, does vision OCR via Ollama minicpm-v
-       ↕ (no direct link — both talk to Paperless API independently)
-paperless-ai  (:3000)        — polls on cron, does classification via Ollama llama3.1
+paperless-gpt (:8080)        — polls by tag, runs qwen3-vl:8b vision OCR
+       ↕ tag change fires Paperless Workflow webhook
+paperless-ai-next (:3000)    — webhook-triggered, runs qwen3:14b classification
        ↕ HTTP
-Ollama (host:11434)          — serves both models, runs on WSL host (not in Docker)
+Ollama (host:11434)          — serves both models (sequential, one at a time)
 ```
 
 ### paperless-gpt (icereed/paperless-gpt) — Vision OCR
 
-- **Tag-driven workflow**: watches for documents with `paperless-gpt-ocr-auto` tag
-- Converts PDF pages to images → sends to minicpm-v:8b vision model → replaces document text
-- **Removes the trigger tag** after processing (no infinite loops)
-- Tagging mode disabled in current config (`AUTO_TAG=""`, `MANUAL_TAG=""`)
-- Reaches Ollama via `http://host.docker.internal:11434`
-- Debug: `LOG_LEVEL=debug`, web UI at `:8080`, `docker logs paperless-gpt`
+- Watches for `paperless-gpt-ocr-auto` tag (set by Paperless Workflow on every new document)
+- Converts PDF pages → images → qwen3-vl:8b → replaces document text
+- Removes `paperless-gpt-ocr-auto`, adds `ai-process` tag (configured via `PDF_OCR_COMPLETE_TAG`)
+- Tagging mode disabled (`AUTO_TAG=""`) — classification is handled by paperless-ai-next
+- Config: `./paperless-gpt/.env`
+- Debug: `docker compose logs paperless-gpt`, UI at `:8080`
 
-### paperless-ai (clusterzx/paperless-ai) — AI Classification
+### paperless-ai-next (admonstrator/paperless-ai-next) — AI Classification
 
-- **Cron-driven**: polls every 5 min (`SCAN_INTERVAL=*/5 * * * *`), no tag trigger needed
-- Sends document text to llama3.1 → gets back title, tags, correspondent, document type
-- Applies results via Paperless API PATCH
-- **CRITICAL: Requires setup wizard** at `http://localhost:3000/setup` to be completed once. The app validates API/Ollama connectivity and writes internal state. Setting env vars alone may not work (upstream issue #358).
-- Config lifecycle: `setup.sh` writes managed keys → wizard adds its own keys → subsequent `setup.sh` runs preserve wizard keys
-- Debug endpoints: `/health`, `/debug/tags`, `/debug/documents`, `/debug/correspondents`, `/api-docs`
-- Dashboard: `http://localhost:3000/dashboard`
-- Logs: `docker logs paperless-ai` or HTML logs inside container at `/app/data/logs.html`
+- **Webhook-triggered**: Paperless Workflow fires `POST http://paperless-ai-next:3000/api/webhook/document` when `ai-process` tag is applied
+- Fallback: cron polling every 5 min (`SCAN_INTERVAL=*/5 * * * *`) catches missed webhooks
+- **CRITICAL: Setup wizard required** once at `http://localhost:3000/setup`
+- Config: `./paperless-ai-next/.env` (SYSTEM_PROMPT, PROMPT_TAGS, OLLAMA_MODEL)
+- Debug: `/health`, `/debug/tags`, `/debug/documents`, HTML logs at `/app/data/logs.html`
+
+### Required Paperless-ngx Workflows (configure after bootstrap)
+
+**Workflow 1 — Auto Vision OCR**
+- Trigger: Document Added
+- Action: Assign tag → `paperless-gpt-ocr-auto`
+
+**Workflow 2 — AI Classification after OCR**
+- Trigger: Document Updated
+- Condition: has tag `ai-process`
+- Action: Webhook POST → `http://paperless-ai-next:3000/api/webhook/document`
+- Header: `x-api-key: <PAPERLESS_AI_NEXT_API_KEY>`
+- Body: `{"doc_url": "{{ doc_url }}"}`
 
 ### Key Config Interactions
 
 | Setting | What it does |
 |---|---|
 | `USE_PROMPT_TAGS=yes` | AI can only assign tags from `PROMPT_TAGS` list |
-| `PROMPT_TAGS=...` | Comma-separated whitelist (defined in `config.sh`, excludes workflow tags) |
+| `PROMPT_TAGS=...` | Comma-separated whitelist (in `paperless-ai-next/.env`, excludes workflow tags) |
 | `RESTRICT_TO_EXISTING_TAGS=yes` | Backup: drops any tag not already in Paperless-ngx |
 | `ADD_AI_PROCESSED_TAG=yes` | Adds `ai-processed` marker tag after processing |
-| `PROCESS_PREDEFINED_DOCUMENTS=yes` + `TAGS=ai-process` | Only process documents with the `ai-process` trigger tag (target state). `=no` would process ALL documents — avoid, leads to over-tagging. |
+| `PROCESS_PREDEFINED_DOCUMENTS=yes` + `TAGS=ai-process` | Only process docs with the trigger tag |
+| `PDF_OCR_COMPLETE_TAG=ai-process` | paperless-gpt adds this tag after OCR — triggers Stage 3 |
 
 ### Common AI Tagging Failures
 
-1. **Setup wizard never completed** → paperless-ai sits idle. Check: `curl localhost:3000/health`
-2. **Ollama not reachable from container** → tagging silently fails (no retry). Check: `docker exec paperless-ai curl -s http://172.17.0.1:11434/api/tags`
-3. **Old env var names** → `TAGS=true` may not work in v3.x, needs `ACTIVATE_TAGGING=yes`
-4. **Model swapping thrash** → only one model loaded at a time by default. Fix: `OLLAMA_MAX_LOADED_MODELS=2` (needs ~12GB RAM)
-5. **API token still placeholder** → paperless-ai can't authenticate. Check: `docker exec paperless-ai cat /app/data/.env | grep TOKEN`
-6. **Poor OCR = poor tagging** → garbage Tesseract text means garbage AI output. Enable vision OCR via `paperless-gpt-ocr-auto` workflow tag
+1. **Setup wizard never completed** → paperless-ai-next sits idle. Check: `curl localhost:3000/health`
+2. **Ollama not reachable** → tagging silently fails. Check: `docker compose exec paperless-ai-next curl http://host.docker.internal:11434/api/tags`
+3. **Workflow 2 not configured** → webhook never fires, fallback cron is the only path (5 min delay)
+4. **Model swap latency** → ~10-20s between Stage 2 and 3 is expected (`OLLAMA_MAX_LOADED_MODELS=1`)
+5. **API token placeholder** → paperless-ai-next can't authenticate. Check: `docker compose exec paperless-ai-next cat /app/data/.env | grep TOKEN`
+6. **Poor OCR = poor tagging** → run `./scripts/pipeline-timing.sh` to see if Stage 2 is completing
 
-### Diagnostic One-Liners (run on WSL host)
+### Diagnostic One-Liners (WSL host)
 
 ```bash
-# Is Ollama running and reachable?
+# Is Ollama running?
 curl -s http://localhost:11434/api/tags | head -1
 
-# Can paperless-ai reach Ollama?
-docker exec paperless-ai curl -s http://172.17.0.1:11434/api/tags
+# Can paperless-gpt reach Ollama?
+docker compose exec paperless-gpt curl -s http://host.docker.internal:11434/api/tags
 
-# Can paperless-ai reach Paperless-ngx?
-docker exec paperless-ai curl -s http://paperless:8000/api/tags/ -H "Authorization: Token $(grep PAPERLESS_API_TOKEN .env | cut -d= -f2)"
+# Can paperless-ai-next reach Paperless?
+docker compose exec paperless-ai-next curl -s http://paperless:8000/api/tags/ \
+  -H "Authorization: Token $(grep PAPERLESS_API_TOKEN .env | cut -d= -f2)"
 
-# What models are currently loaded in Ollama?
+# What models are loaded right now?
 curl -s http://localhost:11434/api/ps
 
-# Is paperless-ai healthy?
+# paperless-ai-next health + tags
 curl -s http://localhost:3000/health
-
-# What tags does paperless-ai see?
 curl -s http://localhost:3000/debug/tags
 
-# Test Ollama classification directly
-curl -s http://localhost:11434/api/generate -d '{"model":"llama3.1","prompt":"Classify this document: Invoice from Deutsche Telekom for March 2026","stream":false}' | head -5
+# Test qwen3:14b directly
+curl -s http://localhost:11434/api/generate \
+  -d '{"model":"qwen3:14b","prompt":"Classify: Invoice from Deutsche Telekom March 2026","stream":false}' | head -5
+
+# Full pipeline diagnosis
+./scripts/diagnose.sh
 ```
+
+## Data Migration (old stack → compose)
+
+See `tasks/prd-docker-compose-migration.md` Section 4.8 for the full migration guide.
+
+**Short version:**
+1. Export from running old stack: `docker exec paperless document_exporter /usr/src/paperless/export`
+2. Copy export: `docker cp paperless:/usr/src/paperless/export/. ~/paperless-migration/`
+3. Archive old scripts: already done (see `scripts-archive/`)
+4. Stand up new stack: `docker compose up -d`
+5. Import: `docker compose cp ~/paperless-migration/. paperless:/usr/src/paperless/import/`
+6. `docker compose exec paperless document_importer /usr/src/paperless/import`
+7. Seed taxonomy (if fresh): `./scripts/bootstrap.sh`
+8. Complete setup wizard: `http://localhost:3000/setup`
+9. Pull models via Open WebUI: `http://localhost:3001`
+10. Run: `./scripts/diagnose.sh`
 
 ## Tasks & Planning
 
-- `tasks/` — active PRDs and feature specs. Currently: `prd-ai-tagging-pipeline.md` (pipeline chaining fix, in-progress)
-- `tasks/done/` — completed PRDs (archived for reference)
-- Write a PRD here for any non-trivial feature before implementing
+- `tasks/` — active PRDs and feature specs. Current: `prd-docker-compose-migration.md`
+- `tasks/done/` — completed PRDs (archived)
+- Write a PRD for any non-trivial feature before implementing
 
 ## Important Patterns
 
-- All scripts use `set -euo pipefail` and source `config.sh` for shared state
-- `setup.sh` uses `create_if_absent()` — safe to re-run, skips existing containers
-- `bootstrap.sh` is idempotent — existing API items return 400 (treated as success)
-- `setup.sh` merges paperless-ai config: overwrites managed keys, preserves wizard-added keys
-- Ollama systemd service must be disabled — scripts manage Ollama directly to avoid dual-instance model directory conflicts
-- Consumer polling (`CONSUMER_POLLING=10`) is required because inotify doesn't work across the WSL2/Windows bridge
+- `scripts/bootstrap.sh` is idempotent — HTTP 400 on duplicates = already exists, not an error
+- All bind-mount data dirs are gitignored; `.env` files in service subdirs are NOT gitignored (no secrets)
+- Consumer polling (`CONSUMER_POLLING=10`) is required — inotify doesn't work across WSL2/Windows bridge
+- Ollama systemd service should be disabled — start manually with `OLLAMA_HOST=0.0.0.0 ollama serve`
+- `docker compose exec` (not `docker exec`) — compose resolves service names to containers
 
 ## Environment: Dev Container
 
 This project runs inside a **VS Code dev container**.
-- **⚠️ NO DOCKER IN DEV CONTAINER** — Docker daemon is NOT available. Never run `docker` commands, `./setup.sh`, `./start.sh`, etc. from inside the container. The user runs these on the WSL host.
-- **Port forwarding** — Devcontainer forwards port 8080 to host; Paperless runs on 8000.
+- **⚠️ NO DOCKER IN DEV CONTAINER** — Docker daemon is NOT available. Never run `docker` or `docker compose` commands from inside the container. The user runs these on the WSL host.
+- **Port forwarding** — Devcontainer forwards ports; Paperless runs on 8000, Dozzle on 9999.
 - **Persistent state** — `.claude/` is symlinked to `/agentic-central` mount (survives rebuilds).
 
 ### Claude Code Configuration Strategy

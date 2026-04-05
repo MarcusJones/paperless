@@ -1,6 +1,6 @@
 # PRD: Docker Compose Migration & Pipeline Redesign
 
-**Status:** Draft
+**Status:** Complete
 **Created:** 2026-04-04
 **Supersedes:** `prd-ai-tagging-pipeline.md` (pipeline handoff sections)
 
@@ -470,3 +470,67 @@ qwen3:14b (~10GB) + qwen3-vl:8b (~6GB) = ~16GB total, exceeding the 12GB VRAM av
 | OQ9 | Does Dozzle support saved multi-container filter presets (e.g., "AI Pipeline" = paperless + paperless-gpt + paperless-ai-next)? Or is it a manual selection each time? | Affects daily UX for log monitoring |
 | OQ10 | Does paperless-ai-next's `/api/webhook/document` endpoint accept `doc_url` (paperless-ngx's webhook placeholder) or does it need `document_id` extracted from the URL? What's the exact expected request body? | Determines webhook configuration complexity |
 | OQ11 | Can a Paperless-ngx Workflow trigger on "Tag Applied" specifically (not just "Document Added" or "Document Updated")? If only "Document Updated" is available, the webhook may fire on every metadata change, not just the `ai-process` tag addition. | Determines webhook precision — may need filtering logic in paperless-ai-next |
+
+---
+
+## 10. Tasks
+
+### Pre-flight Requirements
+- **Packages:** None
+- **Environment variables:** None — root `.env` structure is defined here; fill in `.env.example` values
+- **System changes:** None — no Docker available in dev container; all `docker compose` commands run on the WSL host
+
+### Relevant Files
+
+| File | Purpose |
+|------|---------|
+| `compose.yaml` | All 9 services defined here |
+| `.env.example` | Template for root secrets |
+| `paperless/.env` | Non-secret paperless-ngx config |
+| `postgres/.env` | DB name + user |
+| `paperless-ai-next/.env` | AI classification config |
+| `paperless-gpt/.env` | Vision OCR config |
+| `scripts/bootstrap.sh` | Taxonomy seeding (compose-aware) |
+| `scripts/diagnose.sh` | Pipeline health checks (compose-aware) |
+| `scripts/backup.sh` | Export + Dropbox copy (compose-aware) |
+| `scripts/pipeline-timing.sh` | Per-document stage timing |
+
+### Task List
+
+- [x] **1.0 — Repository Layout & Archive**
+  - [x] 1.1 — Archive current scripts to `scripts-archive/`
+  - [x] 1.2 — Create all service directories and bind-mount subdirs
+  - [x] 1.3 — Update `.gitignore` for bind-mount data dirs and new paths
+
+- [x] **2.0 — compose.yaml**
+  - [x] 2.1 — Write `compose.yaml` with all 9 services (FR-2.1–2.7)
+  - [x] 2.2 — Configure paperless `healthcheck` and `depends_on: service_healthy` for AI services
+
+- [x] **3.0 — Configuration Files**
+  - [x] 3.1 — Create root `.env.example` (updated for new secrets)
+  - [x] 3.2 — Create `paperless/.env` (non-secret paperless-ngx config)
+  - [x] 3.3 — Create `postgres/.env` (DB name + user)
+  - [x] 3.4 — Create `paperless-ai-next/.env` (classification config, model, SYSTEM_PROMPT, PROMPT_TAGS)
+  - [x] 3.5 — Create `paperless-gpt/.env` (vision OCR config, model, tag handoff)
+
+- [x] **4.0 — Operational Scripts**
+  - [x] 4.1 — Create `scripts/bootstrap.sh` (updated for `docker compose exec`)
+  - [x] 4.2 — Create `scripts/diagnose.sh` (updated for compose, new services)
+  - [x] 4.3 — Create `scripts/backup.sh` (updated for compose)
+  - [x] 4.4 — Create `scripts/pipeline-timing.sh` (new — per-document stage timing)
+
+- [x] **5.0 — Documentation**
+  - [x] 5.1 — Update `CLAUDE.md` for compose workflow and new architecture
+
+### Progress Log
+
+| Date | Task | Note |
+|------|------|------|
+| 2026-04-05 | 1.1 | Archived setup.sh, start.sh, stop.sh, remove.sh, logs.sh, status.sh, backup.sh, bootstrap.sh, diagnose.sh, config.sh → scripts-archive/ |
+| 2026-04-05 | 1.2 | Created paperless/, postgres/, redis/, gotenberg/, tika/, paperless-ai-next/, paperless-gpt/, open-webui/, dozzle/, scripts/ directories |
+| 2026-04-05 | 1.3 | Updated .gitignore with all bind-mount data/ dirs |
+| 2026-04-05 | 2.0 | Created compose.yaml: 9 services, healthcheck on paperless, service_healthy depends_on for AI services, extra_hosts for Ollama, Dozzle socket mount |
+| 2026-04-05 | 3.0 | Created all service .env files; updated .env.example with PAPERLESS_AI_NEXT_API_KEY |
+| 2026-04-05 | 4.0 | Created scripts/bootstrap.sh, diagnose.sh, backup.sh (compose-aware); scripts/pipeline-timing.sh (new awk-based timing) |
+| 2026-04-05 | 5.1 | Rewrote CLAUDE.md for compose architecture, new models, pipeline, daily ops |
+| 2026-04-05 | All | Implementation complete |

@@ -1,0 +1,153 @@
+# compose.yaml — Paperless-ngx + AI pipeline
+#
+# Ollama is NOT here — it runs on the WSL host at host.docker.internal:11434.
+# Services that need Ollama use `extra_hosts: ["host.docker.internal:host-gateway"]`.
+#
+# Secrets come from the root .env file (gitignored). Non-secret config lives in
+# each service's own <service>/.env file (committed).
+#
+# Usage:
+#   docker compose up -d          — start full stack
+#   docker compose down           — stop and remove containers (data preserved)
+#   docker compose logs -f        — tail all logs
+#   docker compose exec paperless python3 manage.py <cmd>
+
+name: paperless
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - ./redis/data:/data
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    env_file: ./postgres/.env
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+
+  tika:
+    image: apache/tika:latest
+    restart: unless-stopped
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-allow-list=file:///tmp/.*"
+
+  # ── Core — Paperless-ngx ────────────────────────────────────────────────────
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+      - tika
+      - gotenberg
+    ports:
+      - "8000:8000"
+    env_file: ./paperless/.env
+    environment:
+      # Secrets injected from root .env
+      PAPERLESS_SECRET_KEY: ${SECRET_KEY}
+      PAPERLESS_DBPASS: ${PG_PASSWORD}
+    volumes:
+      # All bind-mounts use relative paths — data is inspectable with ls/du
+      - ./paperless/data:/usr/src/paperless/data
+      - ./paperless/media:/usr/src/paperless/media
+      - ./paperless/export:/usr/src/paperless/export
+      # consume/ should be a symlink to your Dropbox folder:
+      #   ln -s /mnt/c/Users/<you>/Dropbox/paperless-consume ./paperless/consume
+      - ./paperless/consume:/usr/src/paperless/consume
+    healthcheck:
+      # The login page confirms Django + DB are up; no API token needed
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/accounts/login/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # ── AI Pipeline ─────────────────────────────────────────────────────────────
+
+  paperless-ai-next:
+    # Fork of paperless-ai with retry queues and better error handling.
+    # Setup wizard required once: http://localhost:3000/setup
+    # Dashboard: http://localhost:3000/dashboard
+    # Webhook endpoint: POST http://paperless-ai-next:3000/api/webhook/document
+    image: admonstrator/paperless-ai-next:latest
+    restart: unless-stopped
+    depends_on:
+      paperless:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file: ./paperless-ai-next/.env
+    environment:
+      # Secrets injected from root .env
+      PAPERLESS_TOKEN: ${PAPERLESS_API_TOKEN}
+      API_KEY: ${PAPERLESS_AI_NEXT_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./paperless-ai-next/data:/app/data
+
+  paperless-gpt:
+    # Vision OCR: watches for `paperless-gpt-ocr-auto` tag, runs qwen3-vl:8b,
+    # then adds `ai-process` tag to trigger AI classification.
+    # UI: http://localhost:8080
+    image: icereed/paperless-gpt:latest
+    restart: unless-stopped
+    depends_on:
+      paperless:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file: ./paperless-gpt/.env
+    environment:
+      # Secret injected from root .env
+      PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./paperless-gpt/prompts:/app/prompts
+
+  # ── Monitoring & Management ─────────────────────────────────────────────────
+
+  open-webui:
+    # Ollama model management and prompt testing UI.
+    # URL: http://localhost:3001
+    # First run: pull qwen3:14b and qwen3-vl:8b via Models → Pull
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    ports:
+      - "3001:8080"
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      WEBUI_AUTH: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./open-webui/data:/app/backend/data
+
+  dozzle:
+    # Real-time log viewer for all containers.
+    # URL: http://localhost:9999
+    # Tip: use the "All containers" group or create a custom group for the AI pipeline.
+    image: amir20/dozzle:latest
+    restart: unless-stopped
+    ports:
+      - "9999:8080"
+    volumes:
+      # Read-only Docker socket — Dozzle reads logs, never modifies containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro
