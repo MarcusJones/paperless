@@ -8,14 +8,10 @@ WORKSPACE="${1:?Error: containerWorkspaceFolder not provided as argument}"
 
 echo "=================================="
 
-echo "Creating .claude symlink..."
-ln -sfn /agentic-central "${WORKSPACE}/.claude"
-
-mkdir -p ~/.claude
-cp /agentic-central/claude.json ~/.claude.json 2>/dev/null || true
-cp /agentic-central/claude.home.settings.json ~/.claude/settings.json 2>/dev/null || true
-ln -sfn /agentic-central/commands ~/.claude/commands
-ln -sfn /agentic-central/skills ~/.claude/skills
+echo "Copyig /agentic-central → .claude/ ..."
+mkdir -p .claude ~/.claude
+rsync -a --exclude='.git' /agentic-central/ .claude/
+cp /agentic-central/settings.json ~/.claude/settings.json
 
 echo "Setting up environment..."
 for rc in ~/.bashrc ~/.profile; do

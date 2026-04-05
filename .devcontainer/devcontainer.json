@@ -37,7 +37,7 @@
     "/mnt/c/git/agentic-central/.env"
   ],
   "mounts": [
-    "source=/mnt/c/git/agentic-central,target=/agentic-central,type=bind,consistency=cached",
+    "source=/home/ubuntu/git/agentic-central,target=/agentic-central,type=bind,consistency=cached",
     "source=/mnt/c/Users/m.jones/Pictures/Screenshots,target=/screenshots,type=bind,consistency=cached"
   ],
   "postStartCommand": "bash .devcontainer/post-start.sh ${containerWorkspaceFolder}",

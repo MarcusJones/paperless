@@ -61,6 +61,7 @@ Containers talk to each other via Docker network `paperless`. Containers reach O
 | `status.sh`    | Health check: Ollama PID, container states, service URLs       |
 | `backup.sh`    | Exports docs + copies to Dropbox (timestamped)                 |
 | `logs.sh`      | Tails all container logs with color-coded prefixes             |
+| `diagnose.sh`  | Pipeline diagnostics: 10-check pass/fail for all prerequisites |
 | `config.sh`    | Sourced by all scripts — central config, not run directly      |
 
 ## AI Tagging Pipeline — Integration Guide
