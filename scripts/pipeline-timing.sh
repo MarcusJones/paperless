@@ -119,7 +119,8 @@ function fmt(s) {
   if (debug) printf "DBG  svc=%s  msg=%.80s\n", svc, msg
 
   # ── Stage 1: Paperless ingest ──────────────────────────────────────────────
-  if (svc ~ /^paperless$/) {
+  # Service name may be "paperless" or "paperless-1" (compose project suffix)
+  if (svc ~ /^paperless(-[0-9]+)?$/) {
     # Start: consumer picks up a file
     if (msg ~ /Consuming|Processing incoming/ && msg !~ /Done|complete/) {
       # Try to get filename as a pseudo-id until we get the real doc id
@@ -275,7 +276,7 @@ TZ_OFFSET=$(python3 -c "import time; print(int(-time.timezone + (3600 if time.da
 
 # ── Run ────────────────────────────────────────────────────────────────────────
 SERVICES="paperless paperless-gpt paperless-ai-next"
-AWK_FLAGS="-v debug=${DEBUG} -v tz_offset=${TZ_OFFSET}"
+AWK_FLAGS="-v debug=$([ "$DEBUG" = true ] && echo 1 || echo 0) -v tz_offset=${TZ_OFFSET}"
 
 if [[ "$MODE" == "summary" ]]; then
   echo "=== Pipeline Summary (last 24h) ==="

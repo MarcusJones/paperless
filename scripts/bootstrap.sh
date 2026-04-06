@@ -121,6 +121,38 @@ create_tag() {
   echo "$id"
 }
 
+# create_workflow <name> <json_body>
+# Creates a workflow if one with the same name doesn't already exist.
+create_workflow() {
+  local name="$1"
+  local body="$2"
+  local resp existing_id
+  resp=$(curl -sf --max-time 10 "${API}/workflows/?page_size=200" "${H[@]}")
+  existing_id=$(echo "$resp" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+results=d.get('results',d) if isinstance(d,dict) else d
+ids=[str(r['id']) for r in results if r.get('name')=='${name}']
+print(ids[0] if ids else '')
+" 2>/dev/null || true)
+  if [[ -n "$existing_id" ]]; then
+    echo "  -> '${name}' already exists (id=${existing_id})"
+    return
+  fi
+  local response http_code body_out
+  response=$(curl -s --max-time 10 -w "\n%{http_code}" -X POST "${API}/workflows/" "${H[@]}" -d "$body")
+  http_code=$(echo "$response" | tail -1)
+  body_out=$(echo "$response" | head -n -1)
+  if [[ "$http_code" == "201" ]]; then
+    local id
+    id=$(echo "$body_out" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])" 2>/dev/null || true)
+    echo "  -> '${name}' created (id=${id})"
+  else
+    echo "ERROR: POST workflows returned HTTP ${http_code}: ${body_out}" >&2
+    exit 1
+  fi
+}
+
 # ── Tags ───────────────────────────────────────────────────────────────────────
 echo "--> Creating tags..."
 
@@ -163,10 +195,11 @@ set_tag_matching "Altenberg" 3 "St. Andra-Wörden"
 echo "  -> Altenberg: match literal 'St. Andra-Wörden'"
 
 # Pipeline / workflow tags (NOT in PROMPT_TAGS — AI must never self-assign these)
-create_tag "paperless-gpt-ocr-auto" >/dev/null
-echo "  -> paperless-gpt-ocr-auto (Stage 1→2: triggers vision OCR)"
-create_tag "ai-process" >/dev/null
-echo "  -> ai-process            (Stage 2→3: triggers AI classification)"
+# Capture IDs — needed below when creating workflows
+OCR_TAG_ID=$(create_tag "paperless-gpt-ocr-auto")
+echo "  -> paperless-gpt-ocr-auto (Stage 1→2: triggers vision OCR) [id=${OCR_TAG_ID}]"
+AI_PROCESS_TAG_ID=$(create_tag "ai-process")
+echo "  -> ai-process            (Stage 2→3: triggers AI classification) [id=${AI_PROCESS_TAG_ID}]"
 create_tag "ai-processed" >/dev/null
 echo "  -> ai-processed          (Stage 3 complete: classification done)"
 
@@ -209,26 +242,92 @@ api_post "storage_paths" '{
 }' >/dev/null
 echo "  -> correspondent/year/title"
 
+# ── Workflows ─────────────────────────────────────────────────────────────────
+echo ""
+echo "--> Creating workflows..."
+
+# Workflow 1: every new document → assign paperless-gpt-ocr-auto → queues vision OCR
+create_workflow "Auto Vision OCR" "$(cat <<EOF
+{
+  "name": "Auto Vision OCR",
+  "order": 1,
+  "enabled": true,
+  "triggers": [
+    {
+      "type": 2,
+      "sources": ["1", "2", "3"],
+      "matching_algorithm": 0,
+      "match": "",
+      "is_insensitive": true,
+      "filter_filename": null,
+      "filter_path": null,
+      "filter_mailrule": null,
+      "filter_has_tags": [],
+      "filter_has_all_tags": [],
+      "filter_has_not_tags": []
+    }
+  ],
+  "actions": [
+    {
+      "type": 1,
+      "assign_tags": [${OCR_TAG_ID}]
+    }
+  ]
+}
+EOF
+)"
+
+# Workflow 2: document updated + has ai-process tag → webhook to paperless-ai-next
+create_workflow "AI Classification after OCR" "$(cat <<EOF
+{
+  "name": "AI Classification after OCR",
+  "order": 2,
+  "enabled": true,
+  "triggers": [
+    {
+      "type": 3,
+      "sources": ["1", "2", "3"],
+      "matching_algorithm": 0,
+      "match": "",
+      "is_insensitive": true,
+      "filter_filename": null,
+      "filter_path": null,
+      "filter_mailrule": null,
+      "filter_has_tags": [],
+      "filter_has_all_tags": [${AI_PROCESS_TAG_ID}],
+      "filter_has_not_tags": []
+    }
+  ],
+  "actions": [
+    {
+      "type": 4,
+      "webhook": {
+        "url": "http://paperless-ai-next:3000/api/webhook/document",
+        "use_params": false,
+        "as_json": true,
+        "params": null,
+        "body": "{\"doc_url\": \"{{ doc_url }}\"}",
+        "headers": {
+          "x-api-key": "${PAPERLESS_AI_NEXT_API_KEY:-}"
+        },
+        "include_document": false
+      }
+    }
+  ]
+}
+EOF
+)"
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
 echo "[OK] Bootstrap done"
 echo ""
-echo "Required: configure two Workflows in the Paperless UI (Settings → Workflows):"
+echo "Next steps:"
+echo "  1. Complete paperless-ai-next setup wizard: http://localhost:3000/setup"
+echo "  2. Pull models via Open WebUI: http://localhost:3001"
+echo "     Pull: qwen3:14b  and  qwen3-vl:8b"
 echo ""
-echo "  Workflow 1 — Auto Vision OCR"
-echo "    Trigger:  Document Added"
-echo "    Action:   Assign tag → paperless-gpt-ocr-auto"
-echo "    Effect:   Every new document gets queued for vision OCR"
-echo ""
-echo "  Workflow 2 — AI Classification after OCR  (webhook trigger)"
-echo "    Trigger:  Document Updated"
-echo "    Conditions: has tag 'ai-process'"
-echo "    Action:   Webhook POST → http://paperless-ai-next:3000/api/webhook/document"
-echo "    Headers:  x-api-key: <PAPERLESS_AI_NEXT_API_KEY from root .env>"
-echo "    Body:     {\"doc_url\": \"{{ doc_url }}\"}"
-echo "    Effect:   paperless-ai-next processes the document immediately (zero polling delay)"
-echo ""
-echo "  Optional: create Saved Views in the dashboard:"
+echo "  Optional: create Saved Views in the dashboard (Settings → Saved Views):"
 echo "    Inbox:         filter Status = Inbox,         sort newest first"
 echo "    Action needed: filter Status = Action needed, sort oldest first"
 echo "    Waiting:       filter Status = Waiting"

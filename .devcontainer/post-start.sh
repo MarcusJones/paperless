@@ -12,6 +12,7 @@ echo "Copyig /agentic-central → .claude/ ..."
 mkdir -p .claude ~/.claude
 rsync -a --exclude='.git' /agentic-central/ .claude/
 cp /agentic-central/settings.json ~/.claude/settings.json
+cp /agentic-central/claude.json ~/.claude.json
 
 echo "Setting up environment..."
 for rc in ~/.bashrc ~/.profile; do

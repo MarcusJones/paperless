@@ -1,6 +1,13 @@
 # compose.yaml — Paperless-ngx + AI pipeline
 #
-# Ollama is NOT here — it runs on the WSL host at host.docker.internal:11434.
+# Ports:
+#   8000  paperless-ngx     — web UI + REST API
+#   3000  paperless-ai-next — AI classification dashboard + webhook
+#   8080  paperless-gpt     — vision OCR UI
+#   9999  dozzle            — container log viewer
+#   3001  open-webui        — Ollama model management
+#
+# Ollama is NOT here — it runs on the WSL host at host.docker.internal:11435.
 # Services that need Ollama use `extra_hosts: ["host.docker.internal:host-gateway"]`.
 #
 # Secrets come from the root .env file (gitignored). Non-secret config lives in
@@ -48,7 +55,7 @@ services:
   # ── Core — Paperless-ngx ────────────────────────────────────────────────────
 
   paperless:
-    image: ghcr.io/paperless-ngx/paperless-ngx:2
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
     restart: unless-stopped
     depends_on:
       - redis
@@ -133,7 +140,7 @@ services:
     ports:
       - "3001:8080"
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11435
       WEBUI_AUTH: "false"
     extra_hosts:
       - "host.docker.internal:host-gateway"
