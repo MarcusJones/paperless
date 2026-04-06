@@ -91,21 +91,12 @@ docker compose up -d --force-recreate paperless-gpt paperless-ai-next
 ./scripts/bootstrap.sh
 
 # 9. Pull required models (Ollama must be running — see step 2)
-ollama pull qwen3-vl:8b   # vision OCR base model
+ollama pull qwen2.5vl:7b  # vision OCR (Stage 2)
 ollama pull qwen3:14b     # AI classification (Stage 3)
 
-# 10. Create a custom vision model with a larger context window
-#     qwen3-vl:8b defaults to 4096 tokens — too small for full-page images.
-#     Vision models encode images as patch tokens (~10k tokens for an A4 page).
-#     qwen3-vl-ocr is identical to qwen3-vl:8b but with a 32k context window.
-ollama create qwen3-vl-ocr -f - <<'EOF'
-FROM qwen3-vl:8b
-PARAMETER num_ctx 32768
-EOF
+# 10. Complete the paperless-ai-next setup wizard at http://localhost:3000/setup
 
-# 11. Complete the paperless-ai-next setup wizard at http://localhost:3000/setup
-
-# 12. Drop a PDF into your Dropbox/paperless-consume folder — watch it flow
+# 11. Drop a PDF into your Dropbox/paperless-consume folder — watch it flow
 ```
 
 ### Paperless Workflows
@@ -192,16 +183,18 @@ in 12GB VRAM. `OLLAMA_MAX_LOADED_MODELS=1` ensures they swap sequentially — ex
 
 | Stage | Model | Role | VRAM | Speed |
 |---|---|---|---|---|
-| Vision OCR | `qwen3-vl-ocr` | Reads scanned pages as images, extracts text | ~6 GB | ~15–30s/page |
+| Vision OCR | `qwen2.5vl:7b` | Reads scanned pages as images, extracts text | ~8 GB | ~30–60s/page |
 | AI classify | `qwen3:14b` | Assigns title, tags, correspondent, doc type | ~9 GB | ~10–20s/doc |
 
-`qwen3-vl-ocr` is a custom Ollama model — it's `qwen3-vl:8b` with `num_ctx 32768` set via a Modelfile. The weights are identical; only the KV cache size changes.
-
-**Why this is needed:** qwen3-vl uses dynamic resolution — it tiles images into 28×28px patches and tokenizes each patch. An A4 page at 300 DPI (~2400×3400px) produces ~10,000 patch tokens. Ollama's default `num_ctx` of 4096 can't hold them all, so it silently truncates the image mid-process and returns empty OCR output. `num_ctx 32768` allocates a large enough KV cache buffer to hold the full image token sequence. The model itself has no fixed input size limit — this is purely a runtime memory allocation.
-
-The custom model must be created once with `ollama create` (see First-time setup step 10).
-
 These two models **cannot coexist** in 12 GB VRAM. `OLLAMA_MAX_LOADED_MODELS=1` in `paperless/.env` forces sequential loading — the 10–20s gap between Stage 2 and Stage 3 is the model swap.
+
+### ⚠️ Do not use qwen3-vl for OCR
+
+`qwen3-vl` is a "thinking" model with a 256K native context window. Even for a single page image, its architecture allocates KV cache proportional to that 256K ceiling — this causes 5–14 min per page even on high-end GPUs (confirmed upstream issue QwenLM/Qwen3-VL#1923, reproducible on A100s). `qwen2.5vl:7b` uses the same model family but without the thinking mode overhead and with efficient image tokenization.
+
+### Watch list
+
+`glm-ocr` (Zhipu AI, March 2026) — only 2.2 GB, ranked #1 on OmniDocBench at 94.62 accuracy, 1.86 pages/sec throughput. Currently has a bug in paperless-gpt with high-res images (issue icereed/paperless-gpt#880, fix pending). When that merges, switching to `glm-ocr` will free ~6 GB VRAM during Stage 2, eliminating the model-swap delay between Stage 2 and Stage 3 entirely.
 
 ### Swapping models
 

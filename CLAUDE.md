@@ -83,6 +83,7 @@ scripts-archive/      — old pre-compose scripts (reference only)
 
 | Script | Purpose |
 |--------|---------|
+| `up.sh` | Starts Ollama on WSL host (if not running) then runs `docker compose up -d`. Pass `--no-ollama` to skip. |
 | `scripts/bootstrap.sh` | Creates taxonomy via Paperless REST API (tags, types, Status field, storage path). Idempotent. |
 | `scripts/diagnose.sh` | 10-check pipeline health: Ollama, models, container connectivity, tags, LLM smoke test |
 | `scripts/backup.sh` | Exports docs with `document_exporter` + copies to Dropbox (timestamped) |
