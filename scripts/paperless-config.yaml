@@ -133,6 +133,9 @@ document_types:
     custom_fields:
       - Amount
       - Paid
+      - PaidOn
+      - PaidBy
+      - PaidWith
 
   - name: Contract
 
@@ -157,6 +160,9 @@ document_types:
     custom_fields:
       - Amount
       - Paid
+      - PaidOn
+      - PaidBy
+      - PaidWith
       - Treatment date
       - Submitted OEGKK
       - Submitted Allianz
@@ -195,6 +201,23 @@ custom_fields:
   # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Paid
     data_type: boolean
+
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
+  - name: PaidOn
+    data_type: date
+
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
+  - name: PaidBy
+    data_type: select
+    select_options:
+      - label: Marcus
+      - label: Sabrina
+      - label: Sofiia
+
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
+  # Free text — record which bank account or payment method was used.
+  - name: PaidWith
+    data_type: text
 
   # Treatment date for XNC medical docs — extracted by AI from invoice.
   # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.

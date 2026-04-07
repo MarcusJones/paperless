@@ -238,7 +238,7 @@ curl -s http://localhost:11434/api/generate \
 
 | Type | Custom Fields |
 |------|---------------|
-| Invoice | Amount, Paid |
+| Invoice | Amount, Paid, PaidOn, PaidBy, PaidWith |
 | Contract | — |
 | Receipt | Amount, Paid |
 | Certificate | — |
@@ -246,7 +246,7 @@ curl -s http://localhost:11434/api/generate \
 | Letter | — |
 | Manual | — |
 | Payslip | — |
-| XNC medical | Amount, Paid, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz |
+| XNC medical | Amount, Paid, PaidOn, PaidBy, PaidWith, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz |
 | Anonymverfügung | — |
 | Legal Document | — |
 | List of Standards | — |
@@ -262,6 +262,9 @@ curl -s http://localhost:11434/api/generate \
 | Status | select: Inbox / Action needed / Waiting / Done | ✓ live |
 | Amount | monetary | ⚠ not yet pushed |
 | Paid | boolean | ⚠ not yet pushed |
+| PaidOn | date | ⚠ not yet pushed |
+| PaidBy | select: Marcus / Sabrina / Sofiia | ⚠ not yet pushed |
+| PaidWith | text | ⚠ not yet pushed |
 | Treatment date | date | ⚠ not yet pushed |
 | Submitted OEGKK | date | ⚠ not yet pushed |
 | Submitted Allianz | date | ⚠ not yet pushed |
