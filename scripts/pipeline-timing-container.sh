@@ -118,6 +118,9 @@ function fmt(s) {
         pages = 0
         if (match(msg, /([0-9]+) pages?/, pm)) pages = pm[1]+0
         stage2_pages[doc_id] = pages
+        pgs = (pages > 0) ? sprintf(" (%dpg, %ds/pg)", pages, int(stage2_dur[doc_id]/pages)) : ""
+        printf "%s  VisionOCR done  DOC #%-6s %s%s — waiting for classify...%s\n", CYN, doc_id, fmt(stage2_dur[doc_id]), pgs, RST
+        fflush()
       }
     }
   }
@@ -125,26 +128,27 @@ function fmt(s) {
   # ── Stage 3: paperless-ai-next classification ────────────────────────────────
   if (svc ~ /paperless.ai/) {
     doc_id = extract_doc_id(msg)
-    if (msg ~ /[Pp]rocessing document|[Ss]ending.*Ollama|[Cc]lassif/) {
-      if (doc_id != "") stage3_start[doc_id] = ts
+    # Mark start on "Scan started" (no per-doc start line exists in this app)
+    if (msg ~ /Scan started/) {
+      scan_start = ts
     }
-    if (msg ~ /[Ss]uccessfully processed|[Tt]ags applied|[Cc]lassif.*complete|[Uu]pdated document/) {
-      if (doc_id != "" && doc_id in stage3_start) {
+    # End: "[SUCCESS] Updated document X with:" is the only per-doc completion line
+    if (msg ~ /\[SUCCESS\].*[Uu]pdated document|[Ss]uccessfully.*updated.*document/) {
+      if (doc_id != "") {
         stage3_end[doc_id] = ts
-        stage3_dur[doc_id] = ts - stage3_start[doc_id]
+        # Use scan_start as best approximation if we have it; otherwise stage3 dur = "?"
+        if (scan_start > 0) {
+          stage3_dur[doc_id] = ts - scan_start
+          scan_start = 0
+        } else {
+          stage3_dur[doc_id] = -1
+        }
 
         total = 0; row = ""
 
         s1 = (doc_id in stage1_dur) ? stage1_dur[doc_id]+0 : -1
         total += (s1 > 0) ? s1 : 0
         row = row sprintf("  Ingest: %s", (s1 >= 0) ? fmt(s1) : "?")
-
-        swap = -1
-        if (doc_id in stage2_end && doc_id in stage3_start) {
-          swap = stage3_start[doc_id] - stage2_end[doc_id]
-          if (swap < 0) swap = 0
-          total += swap
-        }
 
         s2 = (doc_id in stage2_dur) ? stage2_dur[doc_id]+0 : -1
         total += (s2 > 0) ? s2 : 0
@@ -156,20 +160,23 @@ function fmt(s) {
           row = row "  VisionOCR: ?"
         }
 
-        if (swap >= 0) row = row sprintf("  Swap: %s", fmt(swap))
-
         s3 = stage3_dur[doc_id]+0
-        total += s3
-        row = row sprintf("  Classify: %s", fmt(s3))
-        row = row sprintf("  " BLD "TOTAL: %s" RST, fmt(total))
+        if (s3 >= 0) {
+          total += s3
+          row = row sprintf("  Classify: %s", fmt(s3))
+        } else {
+          row = row "  Classify: ?"
+        }
+        row = row sprintf("  " BLD "TOTAL: %s" RST, (total > 0) ? fmt(total) : "?")
 
         t = strftime("%Y-%m-%dT%H:%M:%SZ", stage3_end[doc_id])
         printf "%s[%s]  DOC #%-6s%s\n", CYN, t, doc_id, row RST
+        fflush()
 
         delete stage1_dur[doc_id]; delete stage1_end[doc_id]
         delete stage2_start[doc_id]; delete stage2_end[doc_id]
         delete stage2_dur[doc_id];   delete stage2_pages[doc_id]
-        delete stage3_start[doc_id]; delete stage3_end[doc_id]; delete stage3_dur[doc_id]
+        delete stage3_end[doc_id]; delete stage3_dur[doc_id]
       }
     }
   }
