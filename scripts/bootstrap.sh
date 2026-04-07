@@ -304,10 +304,11 @@ create_workflow "AI Classification after OCR" "$(cat <<EOF
       "webhook": {
         "url": "http://paperless-ai-next:3000/api/webhook/document",
         "use_params": false,
-        "as_json": true,
+        "as_json": false,
         "params": null,
         "body": "{\"doc_url\": \"{{ doc_url }}\"}",
         "headers": {
+          "Content-Type": "application/json",
           "x-api-key": "${PAPERLESS_AI_NEXT_API_KEY:-}"
         },
         "include_document": false
@@ -318,14 +319,57 @@ create_workflow "AI Classification after OCR" "$(cat <<EOF
 EOF
 )"
 
+# ── paperless-ai-next internal config ─────────────────────────────────────────
+# The setup wizard writes this file on first run. Pre-seeding it means the wizard
+# is never needed — a fresh stack is fully configured after bootstrap alone.
+echo ""
+echo "--> Pre-seeding paperless-ai-next setup state..."
+mkdir -p "${REPO_ROOT}/paperless-ai-next/data"
+cat > "${REPO_ROOT}/paperless-ai-next/data/.env" <<EOF
+PAPERLESS_API_URL=http://paperless:8000
+PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+PAPERLESS_USERNAME=root
+PROCESS_PREDEFINED_DOCUMENTS=yes
+TAGS=ai-process
+IGNORE_TAGS=
+ADD_AI_PROCESSED_TAG=yes
+AI_PROCESSED_TAG_NAME=ai-processed
+DISABLE_AUTOMATIC_PROCESSING=no
+SCAN_INTERVAL=*/5 * * * *
+AI_PROVIDER=ollama
+OLLAMA_API_URL=http://ollama:11434
+OLLAMA_MODEL=qwen3:14b
+MISTRAL_OCR_ENABLED=no
+MISTRAL_API_KEY=
+MISTRAL_OCR_MODEL=mistral-ocr-latest
+EOF
+echo "  -> paperless-ai-next/data/.env written (setup wizard skipped on next start)"
+
+# ── paperless-ai-next admin user ──────────────────────────────────────────────
+# Run with paperless-ai-next stopped to avoid DB lock:
+#   docker compose stop paperless-ai-next && ./scripts/bootstrap.sh
+echo ""
+echo "--> Creating paperless-ai-next admin user..."
+if [[ -z "${PAPERLESS_AI_ADMIN_USER:-}" ]] || [[ -z "${PAPERLESS_AI_ADMIN_PASSWORD:-}" ]]; then
+  echo "  SKIP: set PAPERLESS_AI_ADMIN_USER and PAPERLESS_AI_ADMIN_PASSWORD in .env"
+else
+  docker run --rm \
+    -v "${REPO_ROOT}/paperless-ai-next/data:/app/data" \
+    -w /app \
+    admonstrator/paperless-ai-next:latest \
+    node -e "
+const b=require('/app/node_modules/bcryptjs'),dm=require('/app/models/document.js');
+b.hash('${PAPERLESS_AI_ADMIN_PASSWORD}',15).then(h=>dm.addUser('${PAPERLESS_AI_ADMIN_USER}',h)).then(()=>{console.log('  -> user created: ${PAPERLESS_AI_ADMIN_USER}');process.exit(0)}).catch(e=>{console.error(e.message);process.exit(1)});
+" && true || { echo "  ERROR: user creation failed" >&2; exit 1; }
+fi
+
 # ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
 echo "[OK] Bootstrap done"
 echo ""
 echo "Next steps:"
-echo "  1. Complete paperless-ai-next setup wizard: http://localhost:3000/setup"
-echo "  2. Pull models via Open WebUI: http://localhost:3001"
-echo "     Pull: qwen3:14b  and  qwen3-vl:8b"
+echo "  1. Pull models via Open WebUI: http://localhost:3001"
+echo "     Pull: qwen3:14b  and  qwen2.5vl:7b"
 echo ""
 echo "  Optional: create Saved Views in the dashboard (Settings → Saved Views):"
 echo "    Inbox:         filter Status = Inbox,         sort newest first"

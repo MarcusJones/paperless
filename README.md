@@ -31,7 +31,34 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER   # then log out and back in
 ```
 
-**2. Ollama** installed on the WSL host:
+**2. NVIDIA Container Toolkit** (required for GPU passthrough to the Ollama container):
+
+```bash
+# Add NVIDIA repo
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+# Install
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+
+# Configure Docker to use it
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Sanity check — verify your GPU is visible in WSL before continuing:
+
+```bash
+nvidia-smi
+```
+
+If `nvidia-smi` fails, the issue is at the driver level (not the toolkit). Re-install
+WSL2 GPU drivers from [nvidia.com](https://www.nvidia.com/Download/index.aspx) and
+ensure you're on a recent WSL2 kernel (`wsl --update` from Windows).
+
+**3. Ollama** installed on the WSL host:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh

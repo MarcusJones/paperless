@@ -6,7 +6,7 @@
 #
 # Checks:
 #  1. Ollama reachable from host
-#  2. Both models (qwen3:14b + qwen3-vl:8b) present
+#  2. Both models (qwen3:14b + qwen2.5vl:7b) present
 #  3. Ollama reachable from paperless-gpt container
 #  4. Ollama reachable from paperless-ai-next container
 #  5. Paperless-ngx API up and token valid
@@ -32,7 +32,7 @@ source "$ENV_FILE"
 PAPERLESS_PORT=8000
 AI_PORT=3000
 CLASSIFICATION_MODEL="qwen3:14b"
-VISION_MODEL="qwen3-vl:8b"
+VISION_MODEL="qwen2.5vl:7b"
 
 PASS=0; FAIL=0; SKIP=0
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -50,35 +50,34 @@ echo "[1] Ollama reachable from host (localhost:11434)"
 if curl -sf --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
   _pass "Ollama is up at http://localhost:11434"
 else
-  _fail "Ollama NOT reachable. Run:"
-  _info "nohup env OLLAMA_HOST=0.0.0.0 OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_KEEP_ALIVE=30m ollama serve &>/dev/null &"
+  _fail "Ollama NOT reachable. Is the stack up? Run: docker compose up -d ollama"
 fi
 echo ""
 
 # ── Check 2: Models present ──────────────────────────────────────────────────
 echo "[2] Models present: ${CLASSIFICATION_MODEL} + ${VISION_MODEL}"
-if ollama list 2>/dev/null | grep -q "^${CLASSIFICATION_MODEL}"; then
+if docker compose -f "$REPO_ROOT/compose.yaml" exec -T ollama ollama list 2>/dev/null | grep -q "^${CLASSIFICATION_MODEL}"; then
   _pass "${CLASSIFICATION_MODEL} present"
 else
-  _fail "${CLASSIFICATION_MODEL} NOT found. Pull via Open WebUI (http://localhost:3001) or: ollama pull ${CLASSIFICATION_MODEL}"
+  _fail "${CLASSIFICATION_MODEL} NOT found. Pull: docker compose exec ollama ollama pull ${CLASSIFICATION_MODEL}"
 fi
-if ollama list 2>/dev/null | grep -q "^${VISION_MODEL}"; then
+if docker compose -f "$REPO_ROOT/compose.yaml" exec -T ollama ollama list 2>/dev/null | grep -q "^${VISION_MODEL}"; then
   _pass "${VISION_MODEL} present"
 else
-  _fail "${VISION_MODEL} NOT found. Pull via Open WebUI (http://localhost:3001) or: ollama pull ${VISION_MODEL}"
+  _fail "${VISION_MODEL} NOT found. Pull: docker compose exec ollama ollama pull ${VISION_MODEL}"
 fi
 echo ""
 
 # ── Check 3: Ollama from paperless-gpt ──────────────────────────────────────
-echo "[3] Ollama reachable from paperless-gpt container (host.docker.internal)"
+echo "[3] Ollama reachable from paperless-gpt container (ollama:11434)"
 if docker compose -f "$REPO_ROOT/compose.yaml" ps paperless-gpt --status running 2>/dev/null | grep -q "paperless-gpt"; then
   result=$(docker compose -f "$REPO_ROOT/compose.yaml" exec -T paperless-gpt \
-    curl -sf --max-time 5 http://host.docker.internal:11434/api/tags 2>/dev/null && echo "ok" || echo "fail")
+    curl -sf --max-time 5 http://ollama:11434/api/tags 2>/dev/null && echo "ok" || echo "fail")
   if [[ "$result" == "ok" ]]; then
     _pass "paperless-gpt can reach Ollama"
   else
-    _fail "paperless-gpt CANNOT reach Ollama at host.docker.internal:11434"
-    _info "Check extra_hosts in compose.yaml; verify Ollama binds 0.0.0.0 (not 127.0.0.1)"
+    _fail "paperless-gpt CANNOT reach Ollama at ollama:11434"
+    _info "Is the ollama service running? docker compose ps ollama"
   fi
 else
   _skip "paperless-gpt container not running"
@@ -86,14 +85,14 @@ fi
 echo ""
 
 # ── Check 4: Ollama from paperless-ai-next ───────────────────────────────────
-echo "[4] Ollama reachable from paperless-ai-next container (host.docker.internal)"
+echo "[4] Ollama reachable from paperless-ai-next container (ollama:11434)"
 if docker compose -f "$REPO_ROOT/compose.yaml" ps paperless-ai-next --status running 2>/dev/null | grep -q "paperless-ai-next"; then
   result=$(docker compose -f "$REPO_ROOT/compose.yaml" exec -T paperless-ai-next \
-    curl -sf --max-time 5 http://host.docker.internal:11434/api/tags 2>/dev/null && echo "ok" || echo "fail")
+    curl -sf --max-time 5 http://ollama:11434/api/tags 2>/dev/null && echo "ok" || echo "fail")
   if [[ "$result" == "ok" ]]; then
     _pass "paperless-ai-next can reach Ollama"
   else
-    _fail "paperless-ai-next CANNOT reach Ollama at host.docker.internal:11434"
+    _fail "paperless-ai-next CANNOT reach Ollama at ollama:11434"
   fi
 else
   _skip "paperless-ai-next container not running"

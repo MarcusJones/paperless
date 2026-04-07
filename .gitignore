@@ -13,6 +13,7 @@ postgres/data/
 redis/data/
 paperless-ai-next/data/
 open-webui/data/
+ollama/data/
 
 # Migration export staging area (may be large)
 migration-export/

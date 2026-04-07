@@ -6,9 +6,9 @@
 #   8080  paperless-gpt     — vision OCR UI
 #   9999  dozzle            — container log viewer
 #   3001  open-webui        — Ollama model management
+#  11434  ollama            — LLM API (also accessible within stack as http://ollama:11434)
 #
-# Ollama is NOT here — it runs on the WSL host at host.docker.internal:11435.
-# Services that need Ollama use `extra_hosts: ["host.docker.internal:host-gateway"]`.
+# Ollama runs as a service in this stack with nvidia GPU passthrough.
 #
 # Secrets come from the root .env file (gitignored). Non-secret config lives in
 # each service's own <service>/.env file (committed).
@@ -97,6 +97,8 @@ services:
     depends_on:
       paperless:
         condition: service_healthy
+      ollama:
+        condition: service_started
     ports:
       - "3000:3000"
     env_file: ./paperless-ai-next/.env
@@ -104,13 +106,11 @@ services:
       # Secrets injected from root .env
       PAPERLESS_TOKEN: ${PAPERLESS_API_TOKEN}
       API_KEY: ${PAPERLESS_AI_NEXT_API_KEY}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./paperless-ai-next/data:/app/data
 
   paperless-gpt:
-    # Vision OCR: watches for `paperless-gpt-ocr-auto` tag, runs qwen3-vl:8b,
+    # Vision OCR: watches for `paperless-gpt-ocr-auto` tag, runs qwen2.5vl:7b,
     # then adds `ai-process` tag to trigger AI classification.
     # UI: http://localhost:8080
     image: icereed/paperless-gpt:latest
@@ -118,32 +118,57 @@ services:
     depends_on:
       paperless:
         condition: service_healthy
+      ollama:
+        condition: service_started
     ports:
       - "8080:8080"
     env_file: ./paperless-gpt/.env
     environment:
       # Secret injected from root .env
       PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./paperless-gpt/prompts:/app/prompts
+
+  # ── LLM ─────────────────────────────────────────────────────────────────────
+
+  ollama:
+    # LLM server — serves qwen3:14b (classify) and qwen2.5vl:7b (vision OCR).
+    # OLLAMA_MAX_LOADED_MODELS=1 enforces sequential model use (12GB VRAM limit).
+    # Models persist in ./ollama/data — re-pull after first run if directory is empty:
+    #   docker compose exec ollama ollama pull qwen3:14b
+    #   docker compose exec ollama ollama pull qwen2.5vl:7b
+    # API: http://localhost:11434 (host) or http://ollama:11434 (within stack)
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ./ollama/data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   # ── Monitoring & Management ─────────────────────────────────────────────────
 
   open-webui:
     # Ollama model management and prompt testing UI.
     # URL: http://localhost:3001
-    # First run: pull qwen3:14b and qwen3-vl:8b via Models → Pull
+    # First run: pull qwen3:14b and qwen2.5vl:7b via Models → Pull
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
+    depends_on:
+      - ollama
     ports:
       - "3001:8080"
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11435
+      OLLAMA_BASE_URL: http://ollama:11434
       WEBUI_AUTH: "false"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./open-webui/data:/app/backend/data
 
@@ -158,3 +183,47 @@ services:
     volumes:
       # Read-only Docker socket — Dozzle reads logs, never modifies containers
       - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  gpu-monitor:
+    # Emits one JSON line every 10s with VRAM usage and GPU utilisation — visible in Dozzle.
+    # Example: {"vram_used_mb":4521,"vram_total_mb":12288,"gpu_util_pct":72}
+    image: nvidia/cuda:12.6.0-base-ubuntu22.04
+    restart: unless-stopped
+    entrypoint: []
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu \
+            --format=csv,noheader,nounits \
+            | awk -F', ' '{printf "{\"vram_used_mb\":%s,\"vram_total_mb\":%s,\"gpu_util_pct\":%s}\n", $1, $2, $3}'
+          sleep 10
+        done
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  pipeline-timing:
+    # Merges logs from the three AI pipeline containers and emits per-document
+    # stage timing — visible in Dozzle at :9999 alongside all other services.
+    # Example: [2026-04-06 17:03:55]  DOC #5      Ingest: 4s  VisionOCR: 47s (3pg, 15s/pg)  Swap: 12s  Classify: 18s  TOTAL: 81s
+    image: docker:cli
+    restart: unless-stopped
+    depends_on:
+      paperless:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts:/scripts:ro
+    environment:
+      COMPOSE_PROJECT_NAME: paperless
+    entrypoint: []
+    command:
+      - sh
+      - -c
+      - "apk add --quiet --no-progress gawk >/dev/null 2>&1 && exec /scripts/pipeline-timing-container.sh"
