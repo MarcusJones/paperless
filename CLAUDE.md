@@ -277,10 +277,11 @@ curl -s http://localhost:11434/api/generate \
 ### Workflows
 
 1. **Auto Vision OCR** — on document_added → assign tag `paperless-gpt-ocr-auto`
-2. **AI Classification after OCR** — on document_updated with tag `ai-process` → webhook to paperless-ai-next
-3. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
-4. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
-5. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz
+2. **Remove ai-process after classification** — on document_updated with tag `ai-processed` → remove tag `ai-process`
+3. **AI Classification after OCR** — on document_updated with tag `ai-process` → webhook to paperless-ai-next
+4. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
+5. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
+6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz
 <!-- [paperless-update:workflows:end] -->
 
 <!-- [paperless-update:saved_views:begin] -->

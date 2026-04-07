@@ -207,8 +207,8 @@ OCR_TAG_ID=$(create_tag "paperless-gpt-ocr-auto")
 echo "  -> paperless-gpt-ocr-auto (Stage 1→2: triggers vision OCR) [id=${OCR_TAG_ID}]"
 AI_PROCESS_TAG_ID=$(create_tag "ai-process")
 echo "  -> ai-process            (Stage 2→3: triggers AI classification) [id=${AI_PROCESS_TAG_ID}]"
-create_tag "ai-processed" >/dev/null
-echo "  -> ai-processed          (Stage 3 complete: classification done)"
+AI_PROCESSED_TAG_ID=$(create_tag "ai-processed")
+echo "  -> ai-processed          (Stage 3 complete: classification done) [id=${AI_PROCESSED_TAG_ID}]"
 # [paperless-update:tags:end]
 
 # ── Document types ─────────────────────────────────────────────────────────────
@@ -300,7 +300,38 @@ create_workflow "Auto Vision OCR" "$(cat <<EOF
 EOF
 )"
 
-# Workflow 2: document updated + has ai-process tag → webhook to paperless-ai-next
+# Workflow 2: document updated + has ai-processed tag → remove ai-process (cleanup)
+create_workflow "Remove ai-process after classification" "$(cat <<EOF
+{
+  "name": "Remove ai-process after classification",
+  "order": 10,
+  "enabled": true,
+  "triggers": [
+    {
+      "type": 3,
+      "sources": ["1", "2", "3"],
+      "matching_algorithm": 0,
+      "match": "",
+      "is_insensitive": true,
+      "filter_filename": null,
+      "filter_path": null,
+      "filter_mailrule": null,
+      "filter_has_tags": [],
+      "filter_has_all_tags": [${AI_PROCESSED_TAG_ID}],
+      "filter_has_not_tags": []
+    }
+  ],
+  "actions": [
+    {
+      "type": 2,
+      "remove_tags": [${AI_PROCESS_TAG_ID}]
+    }
+  ]
+}
+EOF
+)"
+
+# Workflow 3: document updated + has ai-process tag → webhook to paperless-ai-next
 create_workflow "AI Classification after OCR" "$(cat <<EOF
 {
   "name": "AI Classification after OCR",

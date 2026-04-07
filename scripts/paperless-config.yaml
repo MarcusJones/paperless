@@ -270,6 +270,22 @@ workflows:
         assign_tags:
           - ref: paperless-gpt-ocr-auto   # resolved to numeric ID at runtime
 
+  - name: Remove ai-process after classification
+    order: 10
+    enabled: true
+    triggers:
+      - type: document_updated
+        sources: ["1", "2", "3"]
+        matching_algorithm: none
+        filter_has_tags: []
+        filter_has_all_tags:
+          - ref: ai-processed          # fires when paperless-ai-next marks doc as done
+        filter_has_not_tags: []
+    actions:
+      - type: removal
+        remove_tags:
+          - ref: ai-process            # clean up the trigger tag
+
   - name: AI Classification after OCR
     order: 2
     enabled: true
