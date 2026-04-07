@@ -104,12 +104,20 @@ tags:
       or addresses in Hoflein.
 
   # Patient tags — used for XNC medical docs to identify which child.
-  # Not in live system yet — will be created on next push.
   - name: X
+    matching_algorithm: literal
+    match: "Xander"
+    is_insensitive: true
     ai_hint: "Assign to XNC medical documents where the patient is Xander."
   - name: C
+    matching_algorithm: literal
+    match: "Cassian"
+    is_insensitive: true
     ai_hint: "Assign to XNC medical documents where the patient is Cassian."
   - name: N
+    matching_algorithm: literal
+    match: "Nathaniel"
+    is_insensitive: true
     ai_hint: "Assign to XNC medical documents where the patient is Nathaniel."
 
   # ── Pipeline tags — excluded from AI PROMPT_TAGS ──────────────────────────
@@ -407,10 +415,11 @@ ai_classification:
 
     If kids medical invoice:
     - Set document_type to "XNC medical"
-    - Examine the patient name on the document:
-      - If the patient is Xander, apply tag "X"
-      - If the patient is Cassian, apply tag "C"
-      - If the patient is Nathaniel, apply tag "N"
+    - Find the patient name on the document. Look for: "Patient:", "Name des Patienten:", "Rechnungsempfänger:", the name in the salutation ("Sehr geehrte Eltern von ..."), or any name that is clearly the child receiving treatment. The patient is one of three children: Xander, Cassian, or Nathaniel.
+      - If the patient name contains "Xander", apply tag "X"
+      - If the patient name contains "Cassian", apply tag "C"
+      - If the patient name contains "Nathaniel", apply tag "N"
+      - You MUST apply exactly one of X, C, or N — never skip this step for XNC medical documents.
     - Also apply tag "health-xnc"
     - Custom fields (ONLY for these documents):
       - Treatment date: Extract the date of treatment/service (Behandlungsdatum, Leistungsdatum, Ordinationsdatum). If multiple dates, use the most recent. ALWAYS format as YYYY-MM-DD (e.g. 2026-02-21). NEVER use DD.MM.YYYY or any other format. If you are not certain of the exact date, omit this field entirely — do not guess.
