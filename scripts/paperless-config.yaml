@@ -136,6 +136,7 @@ document_types:
       - PaidOn
       - PaidBy
       - PaidWith
+      - InvoiceNr
 
   - name: Contract
 
@@ -163,6 +164,7 @@ document_types:
       - PaidOn
       - PaidBy
       - PaidWith
+      - InvoiceNr
       - Treatment date
       - Submitted OEGKK
       - Submitted Allianz
@@ -183,7 +185,7 @@ document_types:
 # ── Custom fields ──────────────────────────────────────────────────────────────
 # Global entity definitions. Created in Paperless-ngx as global custom fields.
 # Association to document types is enforced via auto-generated workflows.
-# data_type: select | text | date | monetary | integer | float | url | boolean
+# data_type: select | string | longtext | date | monetary | integer | float | url | boolean
 
 custom_fields:
   - name: Status
@@ -194,19 +196,15 @@ custom_fields:
       - label: Waiting
       - label: Done
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Amount
     data_type: monetary
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Paid
     data_type: boolean
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: PaidOn
     data_type: date
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: PaidBy
     data_type: select
     select_options:
@@ -214,29 +212,27 @@ custom_fields:
       - label: Sabrina
       - label: Sofiia
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   # Free text — record which bank account or payment method was used.
   - name: PaidWith
     data_type: string   # API value is "string" not "text"; also valid: longtext
 
+  # Invoice/document number from the original document.
+  - name: InvoiceNr
+    data_type: string
+
   # Treatment date for XNC medical docs — extracted by AI from invoice.
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Treatment date
     data_type: date
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Submitted OEGKK
     data_type: date
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Submitted Allianz
     data_type: date
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Reimbursed OEGKK
     data_type: date
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Reimbursed Allianz
     data_type: date
 
@@ -325,6 +321,45 @@ saved_views:
     filter_rules:
       - rule_type: 17
         value: "Waiting"
+        custom_field: Status
+
+  # XNC Medical workflow views — track kids' medical invoice reimbursement state.
+  # Uses Status field + doc type XNC medical (rule_type 3).
+  # Workflow: Incoming (Status=Inbox) → Submitted (Status=Waiting) → Reimbursed (Status=Done)
+  - name: "XNC Medical: Incoming"
+    sort_field: created
+    sort_reverse: true
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 3
+        value: "XNC medical"    # doc type filter — resolved to ID at runtime
+      - rule_type: 17
+        value: "Inbox"
+        custom_field: Status
+
+  - name: "XNC Medical: Submitted"
+    sort_field: created
+    sort_reverse: false
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 3
+        value: "XNC medical"
+      - rule_type: 17
+        value: "Waiting"
+        custom_field: Status
+
+  - name: "XNC Medical: Reimbursed"
+    sort_field: created
+    sort_reverse: false
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 3
+        value: "XNC medical"
+      - rule_type: 17
+        value: "Done"
         custom_field: Status
 
 # ── AI classification ──────────────────────────────────────────────────────────

@@ -239,6 +239,8 @@ api_post "custom_fields" '{"name":"PaidBy","data_type":"select","extra_data":{"s
 echo "  -> PaidBy (select: Marcus / Sabrina / Sofiia)"
 api_post "custom_fields" '{"name":"PaidWith","data_type":"string"}' >/dev/null
 echo "  -> PaidWith (string)"
+api_post "custom_fields" '{"name":"InvoiceNr","data_type":"string"}' >/dev/null
+echo "  -> InvoiceNr (string)"
 api_post "custom_fields" '{"name":"Treatment date","data_type":"date"}' >/dev/null
 echo "  -> Treatment date (date)"
 api_post "custom_fields" '{"name":"Submitted OEGKK","data_type":"date"}' >/dev/null
@@ -385,9 +387,9 @@ EOF
 )"
 }
 
-auto_attach_fields "Invoice"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith"
+auto_attach_fields "Invoice"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith" "InvoiceNr"
 auto_attach_fields "Receipt"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith"
-auto_attach_fields "XNC medical" "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith" \
+auto_attach_fields "XNC medical" "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith" "InvoiceNr" \
                                  "Treatment date" "Submitted OEGKK" "Submitted Allianz" \
                                  "Reimbursed OEGKK" "Reimbursed Allianz"
 # [paperless-update:workflows:end]
