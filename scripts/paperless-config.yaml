@@ -398,9 +398,11 @@ ai_classification:
     - Use ONLY the name — exclude addresses, reference numbers, account numbers, and any other text
 
     Rules for document_type:
-    - Use ONLY existing document types — NEVER create or invent new ones
-    - NEVER translate document type names into the document language
-    - Prefer the closest existing match (e.g. use "Invoice" not "Rechnung", "Contract" not "Vertrag")
+    - Use ONLY these exact document types (case-sensitive): Invoice, Contract, Receipt, Certificate, Statement, Letter, Manual, Payslip, XNC medical, Anonymverfügung, Legal Document, List of Standards, Order confirmation, Weather Data
+    - NEVER invent or translate document type names — pick the closest match from the list above
+    - A "Honorarnote", "Arztrechnung", or "Rechnung" is an "Invoice"
+    - A "Vertrag" is a "Contract"; a "Brief" is a "Letter"; a "Kontoauszug" is a "Statement"
+    - If no type fits, omit it rather than invent one
 
     Rules for title:
     - Short and concise
