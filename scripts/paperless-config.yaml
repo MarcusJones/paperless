@@ -1,0 +1,282 @@
+# scripts/paperless-config.yaml
+# Single source of truth for Paperless-ngx taxonomy.
+#
+# Managed by the /paperless-update Claude Code command.
+#   Pull (live → YAML):  /paperless-update --pull
+#   Push (YAML → live):  /paperless-update
+#   Dry-run preview:     /paperless-update --dry-run
+#
+# Rules:
+#   - Never edit bootstrap.sh or paperless-ai-next/.env for taxonomy changes — edit here.
+#   - pipeline_tag: true  → excluded from AI PROMPT_TAGS list.
+#   - ai_hint            → compiled into SYSTEM_PROMPT for paperless-ai-next.
+#   - document_types[].custom_fields → auto-generates "[auto] Attach fields:" workflow.
+
+# ── Tags ───────────────────────────────────────────────────────────────────────
+
+tags:
+
+  # Hierarchy: Finance
+  - name: Finance
+    color: "#808080"
+    children:
+      - name: Tax
+        ai_hint: >
+          Assign for tax returns, assessments, Steuerbescheid, or any correspondence
+          from Finanzamt (Austrian/German tax authority).
+      - name: Insurance
+        ai_hint: >
+          Assign for insurance policies, premium notices, claims, or correspondence
+          from any insurance provider.
+      - name: Banking
+        ai_hint: >
+          Assign for bank statements, account letters, IBAN notices, or correspondence
+          from banks or financial institutions.
+
+  # Hierarchy: Housing
+  - name: Housing
+    color: "#808080"
+    children:
+      - name: Rent
+        ai_hint: "Assign for rent invoices, rental agreements, or landlord correspondence."
+      - name: Utilities
+        ai_hint: >
+          Assign for electricity, gas, water, internet, or phone bills
+          (utility providers).
+
+  # Hierarchy: Health
+  - name: Health
+    color: "#808080"
+    children:
+      - name: Medical
+        ai_hint: >
+          Assign for general medical invoices, doctor letters, lab results,
+          or health-related documents not specific to a family member.
+      - name: Dental
+        ai_hint: "Assign for dental invoices, treatment plans, or dental correspondence."
+      - name: health-xnc
+        ai_hint: >
+          Assign when the document is a medical invoice, receipt, prescription,
+          or letter specifically concerning a child (XNC). Look for a child's name
+          or pediatric references.
+      - name: health-ms
+        ai_hint: "Assign when the document concerns health matters for MS."
+      - name: health-po
+        ai_hint: "Assign when the document concerns health matters for PO."
+
+  # Hierarchy: Car
+  - name: Car
+    color: "#808080"
+    children:
+      - name: Car Insurance
+        ai_hint: "Assign for car insurance policies, renewal notices, or claims."
+      - name: Service
+        ai_hint: "Assign for vehicle service invoices, MOT certificates, or repair bills."
+
+  # Hierarchy: Work
+  - name: Work
+    color: "#808080"
+    children:
+      - name: Payslip
+        ai_hint: "Assign for salary slips, pay stubs, Lohnzettel, or payroll documents."
+      - name: Employment
+        ai_hint: >
+          Assign for employment contracts, HR letters, termination notices,
+          or official employer correspondence.
+
+  # Standalone tags
+  - name: Bank
+  - name: School
+    ai_hint: "Assign for school reports, correspondence from schools, or education-related documents."
+  - name: Munster
+  - name: Hoflein
+    ai_hint: "Assign for documents related to Hoflein an der Donau."
+  - name: Heinl
+  - name: Altenberg
+    matching_algorithm: literal
+    match: "St. Andra-Wörden"
+    is_insensitive: true
+    ai_hint: >
+      Assign when the document relates to the municipality of Altenberg,
+      the village of St. Andrä-Wördern, or addresses in Hoflein.
+
+  # ── Pipeline tags — excluded from AI PROMPT_TAGS ──────────────────────────
+  # These are workflow control tags; the AI must never self-assign them.
+  - name: paperless-gpt-ocr-auto
+    pipeline_tag: true
+    matching_algorithm: none
+    match: ""
+  - name: ai-process
+    pipeline_tag: true
+  - name: ai-processed
+    pipeline_tag: true
+
+# ── Document types ─────────────────────────────────────────────────────────────
+# custom_fields: lists field names (defined in custom_fields section below).
+# The command auto-generates an "[auto] Attach fields:" workflow for each type
+# that has a non-empty custom_fields list.
+
+document_types:
+  - name: Invoice
+    custom_fields:
+      - Amount
+      - Paid
+
+  - name: Contract
+
+  - name: Receipt
+    custom_fields:
+      - Amount
+      - Paid
+
+  - name: Certificate
+
+  - name: Statement
+
+  - name: Letter
+
+  - name: Manual
+
+  - name: Payslip
+
+  - name: XNC medical
+    # Kids' medical invoices — submitted to OEGKK and Allianz for reimbursement
+    custom_fields:
+      - Amount
+      - Paid
+      - Submitted OEGKK
+      - Submitted Allianz
+      - Reimbursed OEGKK
+      - Reimbursed Allianz
+
+# ── Custom fields ──────────────────────────────────────────────────────────────
+# Global entity definitions. Created in Paperless-ngx as global custom fields.
+# Association to document types is enforced via auto-generated workflows.
+# data_type: select | text | date | monetary | integer | float | url | boolean
+
+custom_fields:
+  - name: Status
+    data_type: select
+    select_options:
+      - label: Inbox
+      - label: Action needed
+      - label: Waiting
+      - label: Done
+
+  - name: Amount
+    data_type: monetary
+
+  - name: Paid
+    data_type: boolean
+
+  - name: Submitted OEGKK
+    data_type: date
+
+  - name: Submitted Allianz
+    data_type: date
+
+  - name: Reimbursed OEGKK
+    data_type: date
+
+  - name: Reimbursed Allianz
+    data_type: date
+
+# ── Workflows ──────────────────────────────────────────────────────────────────
+# User-defined workflows only. [auto] Attach fields: workflows are generated
+# automatically from document_types[].custom_fields — do not add them here.
+#
+# Trigger types: consumption_started | document_added | document_updated | document_deleted
+# Action types:  assign_tag | assign_correspondent | assign_document_type |
+#                webhook | assign_view | assign_custom_field | remove_tag | email
+# Matching algorithm: none | any_word | all_words | literal | regex | fuzzy | auto
+
+workflows:
+
+  - name: Auto Vision OCR
+    order: 1
+    enabled: true
+    triggers:
+      - type: document_added
+        sources: ["1", "2", "3"]
+        matching_algorithm: none
+        filter_has_tags: []
+        filter_has_all_tags: []
+        filter_has_not_tags: []
+    actions:
+      - type: assign_tag
+        assign_tags:
+          - ref: paperless-gpt-ocr-auto   # resolved to numeric ID at runtime
+
+  - name: AI Classification after OCR
+    order: 2
+    enabled: true
+    triggers:
+      - type: document_updated
+        sources: ["1", "2", "3"]
+        matching_algorithm: none
+        filter_has_tags: []
+        filter_has_all_tags:
+          - ref: ai-process               # fires when ai-process tag is applied
+        filter_has_not_tags: []
+    actions:
+      - type: webhook
+        webhook:
+          url: "http://paperless-ai-next:3000/api/webhook/document"
+          use_params: false
+          as_json: false
+          params: null
+          body: '{"doc_url": "{{ doc_url }}"}'
+          headers:
+            Content-Type: "application/json"
+            x-api-key: "${PAPERLESS_AI_NEXT_API_KEY}"
+          include_document: false
+
+# ── Saved views ────────────────────────────────────────────────────────────────
+# filter_rules rule_type integers (Paperless-ngx constants):
+#   17 = custom field value equals
+
+saved_views:
+  - name: Inbox
+    sort_field: created
+    sort_reverse: true
+    filter_rules:
+      - rule_type: 17
+        value: "Inbox"
+        custom_field: Status    # resolved to numeric ID at runtime
+
+  - name: Action needed
+    sort_field: created
+    sort_reverse: false
+    filter_rules:
+      - rule_type: 17
+        value: "Action needed"
+        custom_field: Status
+
+  - name: Waiting
+    sort_field: created
+    sort_reverse: false
+    filter_rules:
+      - rule_type: 17
+        value: "Waiting"
+        custom_field: Status
+
+# ── AI classification ──────────────────────────────────────────────────────────
+# Compiled into paperless-ai-next/.env as SYSTEM_PROMPT and PROMPT_TAGS.
+# Per-tag ai_hint entries above are injected between the base prompt and closing.
+
+ai_classification:
+  system_prompt_base: |
+    You are a document classifier for a personal document management system.
+    Analyse the document text and return ONLY a valid JSON object — no prose, no markdown fences.
+
+    JSON keys to return:
+      title         — short descriptive title, 5-8 words, in the document's original language
+      tags          — array of tag names from the approved list only
+      correspondent — company or person name that issued the document (or null)
+      document_type — one of the approved document types (or null if none fit)
+
+    Rules:
+      - Prefer specific tags over general parent tags (e.g. "Tax" over "Finance").
+      - Assign multiple tags when the document clearly fits more than one.
+      - If uncertain about a field, omit it (return null) rather than guessing.
+      - Never assign pipeline tags (paperless-gpt-ocr-auto, ai-process, ai-processed).

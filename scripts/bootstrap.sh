@@ -154,6 +154,7 @@ print(ids[0] if ids else '')
 }
 
 # ── Tags ───────────────────────────────────────────────────────────────────────
+# [paperless-update:tags:begin]
 echo "--> Creating tags..."
 
 FIN=$(create_tag "Finance")
@@ -202,8 +203,10 @@ AI_PROCESS_TAG_ID=$(create_tag "ai-process")
 echo "  -> ai-process            (Stage 2→3: triggers AI classification) [id=${AI_PROCESS_TAG_ID}]"
 create_tag "ai-processed" >/dev/null
 echo "  -> ai-processed          (Stage 3 complete: classification done)"
+# [paperless-update:tags:end]
 
 # ── Document types ─────────────────────────────────────────────────────────────
+# [paperless-update:document_types:begin]
 echo ""
 echo "--> Creating document types..."
 for t in Invoice Contract Receipt Certificate Statement Letter Manual Payslip; do
@@ -213,8 +216,10 @@ done
 # Special type for kids medical invoices (used by SYSTEM_PROMPT conditional rule)
 api_post "document_types" '{"name":"XNC medical"}' >/dev/null
 echo "  -> XNC medical"
+# [paperless-update:document_types:end]
 
-# ── Custom field: Status ───────────────────────────────────────────────────────
+# ── Custom fields ─────────────────────────────────────────────────────────────
+# [paperless-update:custom_fields:begin]
 echo ""
 echo "--> Creating Status custom field..."
 api_post "custom_fields" '{
@@ -230,6 +235,7 @@ api_post "custom_fields" '{
   }
 }' >/dev/null
 echo "  -> Status (Inbox / Action needed / Waiting / Done)"
+# [paperless-update:custom_fields:end]
 
 # ── Storage path ──────────────────────────────────────────────────────────────
 echo ""
@@ -243,6 +249,7 @@ api_post "storage_paths" '{
 echo "  -> correspondent/year/title"
 
 # ── Workflows ─────────────────────────────────────────────────────────────────
+# [paperless-update:workflows:begin]
 echo ""
 echo "--> Creating workflows..."
 
@@ -318,6 +325,7 @@ create_workflow "AI Classification after OCR" "$(cat <<EOF
 }
 EOF
 )"
+# [paperless-update:workflows:end]
 
 # ── paperless-ai-next internal config ─────────────────────────────────────────
 # The setup wizard writes this file on first run. Pre-seeding it means the wizard

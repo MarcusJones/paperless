@@ -1,6 +1,6 @@
 # PRD: `/paperless-update` — Paperless-ngx Config Command
 
-**Status:** Draft — v2 (OQ1 + OQ2 resolved)  
+**Status:** Complete  
 **Author:** Marcus Jones  
 **Date:** 2026-04-07
 
@@ -510,6 +510,32 @@ The command uses only tools already present: `curl`, `python3`, `bash`. No `yq` 
 | No item is deleted without a user confirmation prompt | 100% |
 | Dry-run mode makes zero write API calls | 100% |
 | A user can onboard (understand the YAML schema and run the command) without reading this PRD | Stretch goal |
+
+---
+
+---
+
+## Status: In Progress
+
+## Task List
+
+- [x] T1: Create `scripts/paperless-config.yaml` seeded from current bootstrap.sh state
+- [x] T2: Add sentinel comments to `scripts/bootstrap.sh` around managed sections
+- [x] T3: Create `.claude/commands/paperless-update.md` — the full command implementation
+
+### Relevant Files
+- `scripts/paperless-config.yaml` — created by T1
+- `scripts/bootstrap.sh` — modified by T2
+- `.claude/commands/paperless-update.md` — created by T3
+
+### Progress Log
+
+| Date | Task | Note |
+|------|------|------|
+| 2026-04-07 | T1 | Created `scripts/paperless-config.yaml` — all entities from bootstrap.sh + new custom fields |
+| 2026-04-07 | T2 | Added sentinel comments to `scripts/bootstrap.sh` — 4 managed sections |
+| 2026-04-07 | T3 | Created `.claude/commands/paperless-update.md` — full push/pull command |
+| 2026-04-07 | All | All tasks complete. |
 
 ---
 
