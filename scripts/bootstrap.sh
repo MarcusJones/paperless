@@ -191,6 +191,12 @@ for tag in "Bank" "School" "Munster" "Hoflein" "Heinl" "Altenberg"; do
   echo "  -> $tag"
 done
 
+# Patient tags — for XNC medical docs to identify which child
+for tag in "X" "C" "N"; do
+  create_tag "$tag" >/dev/null
+  echo "  -> $tag (patient tag)"
+done
+
 # Auto-matching rule: "Altenberg" tag fires on literal match "St. Andra-Wörden"
 set_tag_matching "Altenberg" 3 "St. Andra-Wörden"
 echo "  -> Altenberg: match literal 'St. Andra-Wörden'"
@@ -209,32 +215,40 @@ echo "  -> ai-processed          (Stage 3 complete: classification done)"
 # [paperless-update:document_types:begin]
 echo ""
 echo "--> Creating document types..."
-for t in Invoice Contract Receipt Certificate Statement Letter Manual Payslip; do
+for t in Invoice Contract Receipt Certificate Statement Letter Manual Payslip \
+         "XNC medical" Anonymverfügung "Legal Document" "List of Standards" \
+         "Order confirmation" "Weather Data"; do
   api_post "document_types" "{\"name\":\"$t\"}" >/dev/null
   echo "  -> $t"
 done
-# Special type for kids medical invoices (used by SYSTEM_PROMPT conditional rule)
-api_post "document_types" '{"name":"XNC medical"}' >/dev/null
-echo "  -> XNC medical"
 # [paperless-update:document_types:end]
 
 # ── Custom fields ─────────────────────────────────────────────────────────────
 # [paperless-update:custom_fields:begin]
 echo ""
-echo "--> Creating Status custom field..."
-api_post "custom_fields" '{
-  "name": "Status",
-  "data_type": "select",
-  "extra_data": {
-    "select_options": [
-      {"label": "Inbox",         "id": "1"},
-      {"label": "Action needed", "id": "2"},
-      {"label": "Waiting",       "id": "3"},
-      {"label": "Done",          "id": "4"}
-    ]
-  }
-}' >/dev/null
-echo "  -> Status (Inbox / Action needed / Waiting / Done)"
+echo "--> Creating custom fields..."
+api_post "custom_fields" '{"name":"Status","data_type":"select","extra_data":{"select_options":[{"label":"Inbox","id":"1"},{"label":"Action needed","id":"2"},{"label":"Waiting","id":"3"},{"label":"Done","id":"4"}]}}' >/dev/null
+echo "  -> Status (select: Inbox / Action needed / Waiting / Done)"
+api_post "custom_fields" '{"name":"Amount","data_type":"monetary"}' >/dev/null
+echo "  -> Amount (monetary)"
+api_post "custom_fields" '{"name":"Paid","data_type":"boolean"}' >/dev/null
+echo "  -> Paid (boolean)"
+api_post "custom_fields" '{"name":"PaidOn","data_type":"date"}' >/dev/null
+echo "  -> PaidOn (date)"
+api_post "custom_fields" '{"name":"PaidBy","data_type":"select","extra_data":{"select_options":[{"label":"Marcus","id":"1"},{"label":"Sabrina","id":"2"},{"label":"Sofiia","id":"3"}]}}' >/dev/null
+echo "  -> PaidBy (select: Marcus / Sabrina / Sofiia)"
+api_post "custom_fields" '{"name":"PaidWith","data_type":"string"}' >/dev/null
+echo "  -> PaidWith (string)"
+api_post "custom_fields" '{"name":"Treatment date","data_type":"date"}' >/dev/null
+echo "  -> Treatment date (date)"
+api_post "custom_fields" '{"name":"Submitted OEGKK","data_type":"date"}' >/dev/null
+echo "  -> Submitted OEGKK (date)"
+api_post "custom_fields" '{"name":"Submitted Allianz","data_type":"date"}' >/dev/null
+echo "  -> Submitted Allianz (date)"
+api_post "custom_fields" '{"name":"Reimbursed OEGKK","data_type":"date"}' >/dev/null
+echo "  -> Reimbursed OEGKK (date)"
+api_post "custom_fields" '{"name":"Reimbursed Allianz","data_type":"date"}' >/dev/null
+echo "  -> Reimbursed Allianz (date)"
 # [paperless-update:custom_fields:end]
 
 # ── Storage path ──────────────────────────────────────────────────────────────
@@ -325,6 +339,57 @@ create_workflow "AI Classification after OCR" "$(cat <<EOF
 }
 EOF
 )"
+
+# [auto] field-attachment workflows — generated from document_types[].custom_fields
+# Uses action type 1 (assignment) with assign_custom_fields array.
+# Requires: doc type IDs and custom field IDs already created above.
+# Field IDs resolved by name at runtime via get_id_by_name helper.
+
+auto_attach_fields() {
+  local doc_type_name="$1"; shift
+  local field_names=("$@")
+  local dt_id field_ids_json="" sep=""
+  dt_id=$(curl -sf --max-time 10 "${API}/document_types/?page_size=200" "${H[@]}" \
+    | grep -o "\"id\":[0-9]*,\"slug\":\"[^\"]*\",\"name\":\"${doc_type_name}\"" \
+    | grep -o '"id":[0-9]*' | grep -o '[0-9]*' || true)
+  if [[ -z "$dt_id" ]]; then echo "  SKIP [auto] ${doc_type_name}: doc type not found"; return; fi
+  for fname in "${field_names[@]}"; do
+    local fid
+    fid=$(curl -sf --max-time 10 "${API}/custom_fields/?page_size=200" "${H[@]}" \
+      | grep -o "\"id\":[0-9]*,\"name\":\"${fname}\"" \
+      | grep -o '"id":[0-9]*' | grep -o '[0-9]*' || true)
+    if [[ -n "$fid" ]]; then field_ids_json+="${sep}${fid}"; sep=","; fi
+  done
+  create_workflow "[auto] Attach fields: ${doc_type_name}" "$(cat <<EOF
+{
+  "name": "[auto] Attach fields: ${doc_type_name}",
+  "order": 100,
+  "enabled": true,
+  "triggers": [{
+    "type": 3,
+    "sources": ["1","2","3"],
+    "matching_algorithm": 0,
+    "match": "",
+    "is_insensitive": true,
+    "filter_filename": null,
+    "filter_path": null,
+    "filter_mailrule": null,
+    "filter_has_tags": [],
+    "filter_has_all_tags": [],
+    "filter_has_not_tags": [],
+    "filter_has_document_type": ${dt_id}
+  }],
+  "actions": [{"type": 1, "assign_custom_fields": [${field_ids_json}]}]
+}
+EOF
+)"
+}
+
+auto_attach_fields "Invoice"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith"
+auto_attach_fields "Receipt"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith"
+auto_attach_fields "XNC medical" "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith" \
+                                 "Treatment date" "Submitted OEGKK" "Submitted Allianz" \
+                                 "Reimbursed OEGKK" "Reimbursed Allianz"
 # [paperless-update:workflows:end]
 
 # ── paperless-ai-next internal config ─────────────────────────────────────────

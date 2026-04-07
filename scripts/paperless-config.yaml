@@ -217,7 +217,7 @@ custom_fields:
   # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   # Free text — record which bank account or payment method was used.
   - name: PaidWith
-    data_type: text
+    data_type: string   # API value is "string" not "text"; also valid: longtext
 
   # Treatment date for XNC medical docs — extracted by AI from invoice.
   # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
@@ -297,28 +297,31 @@ workflows:
 # Run /paperless-update to create them (requires Status custom field to exist first).
 
 saved_views:
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Inbox
     sort_field: created
     sort_reverse: true
+    show_on_dashboard: true
+    show_in_sidebar: true
     filter_rules:
       - rule_type: 17
         value: "Inbox"
         custom_field: Status    # resolved to numeric ID at runtime
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Action needed
     sort_field: created
     sort_reverse: false
+    show_on_dashboard: true
+    show_in_sidebar: true
     filter_rules:
       - rule_type: 17
         value: "Action needed"
         custom_field: Status
 
-  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Waiting
     sort_field: created
     sort_reverse: false
+    show_on_dashboard: true
+    show_in_sidebar: true
     filter_rules:
       - rule_type: 17
         value: "Waiting"

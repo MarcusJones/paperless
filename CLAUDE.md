@@ -240,7 +240,7 @@ curl -s http://localhost:11434/api/generate \
 |------|---------------|
 | Invoice | Amount, Paid, PaidOn, PaidBy, PaidWith |
 | Contract | — |
-| Receipt | Amount, Paid |
+| Receipt | Amount, Paid, PaidOn, PaidBy, PaidWith |
 | Certificate | — |
 | Statement | — |
 | Letter | — |
@@ -260,16 +260,16 @@ curl -s http://localhost:11434/api/generate \
 | Field | Type | Status |
 |-------|------|--------|
 | Status | select: Inbox / Action needed / Waiting / Done | ✓ live |
-| Amount | monetary | ⚠ not yet pushed |
-| Paid | boolean | ⚠ not yet pushed |
-| PaidOn | date | ⚠ not yet pushed |
-| PaidBy | select: Marcus / Sabrina / Sofiia | ⚠ not yet pushed |
-| PaidWith | text | ⚠ not yet pushed |
-| Treatment date | date | ⚠ not yet pushed |
-| Submitted OEGKK | date | ⚠ not yet pushed |
-| Submitted Allianz | date | ⚠ not yet pushed |
-| Reimbursed OEGKK | date | ⚠ not yet pushed |
-| Reimbursed Allianz | date | ⚠ not yet pushed |
+| Amount | monetary | ✓ live |
+| Paid | boolean | ✓ live |
+| PaidOn | date | ✓ live |
+| PaidBy | select: Marcus / Sabrina / Sofiia | ✓ live |
+| PaidWith | string | ✓ live |
+| Treatment date | date | ✓ live |
+| Submitted OEGKK | date | ✓ live |
+| Submitted Allianz | date | ✓ live |
+| Reimbursed OEGKK | date | ✓ live |
+| Reimbursed Allianz | date | ✓ live |
 <!-- [paperless-update:custom_fields:end] -->
 
 <!-- [paperless-update:workflows:begin] -->
@@ -277,9 +277,9 @@ curl -s http://localhost:11434/api/generate \
 
 1. **Auto Vision OCR** — on document_added → assign tag `paperless-gpt-ocr-auto`
 2. **AI Classification after OCR** — on document_updated with tag `ai-process` → webhook to paperless-ai-next
-3. *(pending push)* **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid
-4. *(pending push)* **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid
-5. *(pending push)* **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz
+3. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith
+4. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
+5. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz
 <!-- [paperless-update:workflows:end] -->
 
 <!-- [paperless-update:saved_views:begin] -->
@@ -287,9 +287,9 @@ curl -s http://localhost:11434/api/generate \
 
 | View | Filter | Sort |
 |------|--------|------|
-| Inbox *(pending push)* | Status = Inbox | newest first |
-| Action needed *(pending push)* | Status = Action needed | oldest first |
-| Waiting *(pending push)* | Status = Waiting | oldest first |
+| Inbox | Status = Inbox | newest first |
+| Action needed | Status = Action needed | oldest first |
+| Waiting | Status = Waiting | oldest first |
 <!-- [paperless-update:saved_views:end] -->
 
 ## Data Migration (old stack → compose)
