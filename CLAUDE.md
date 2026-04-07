@@ -213,6 +213,82 @@ curl -s http://localhost:11434/api/generate \
 ./scripts/diagnose.sh
 ```
 
+## Taxonomy (managed by /paperless-update — last pulled 2026-04-07)
+
+<!-- [paperless-update:tags:begin] -->
+### Tags
+
+**Hierarchy:**
+- **Finance** → Tax, Insurance, Banking
+- **Housing** → Rent, Utilities
+- **Health** → Medical, Dental, health-xnc *(AI: child medical docs)*, health-ms, health-po
+- **Car** → Car Insurance, Service
+- **Work** → Payslip, Employment
+
+**Standalone:** Bank, School, Munster, Hoflein, Heinl
+- **Altenberg** — matches literal "St. Andra-Wörden"
+
+**Patient tags (XNC medical):** X *(Xander)*, C *(Cassian)*, N *(Nathaniel)*
+
+**Pipeline (not AI-assignable):** paperless-gpt-ocr-auto, ai-process, ai-processed
+<!-- [paperless-update:tags:end] -->
+
+<!-- [paperless-update:document_types:begin] -->
+### Document Types & Custom Fields
+
+| Type | Custom Fields |
+|------|---------------|
+| Invoice | Amount, Paid |
+| Contract | — |
+| Receipt | Amount, Paid |
+| Certificate | — |
+| Statement | — |
+| Letter | — |
+| Manual | — |
+| Payslip | — |
+| XNC medical | Amount, Paid, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz |
+| Anonymverfügung | — |
+| Legal Document | — |
+| List of Standards | — |
+| Order confirmation | — |
+| Weather Data | — |
+<!-- [paperless-update:document_types:end] -->
+
+<!-- [paperless-update:custom_fields:begin] -->
+### Custom Fields
+
+| Field | Type | Status |
+|-------|------|--------|
+| Status | select: Inbox / Action needed / Waiting / Done | ✓ live |
+| Amount | monetary | ⚠ not yet pushed |
+| Paid | boolean | ⚠ not yet pushed |
+| Treatment date | date | ⚠ not yet pushed |
+| Submitted OEGKK | date | ⚠ not yet pushed |
+| Submitted Allianz | date | ⚠ not yet pushed |
+| Reimbursed OEGKK | date | ⚠ not yet pushed |
+| Reimbursed Allianz | date | ⚠ not yet pushed |
+<!-- [paperless-update:custom_fields:end] -->
+
+<!-- [paperless-update:workflows:begin] -->
+### Workflows
+
+1. **Auto Vision OCR** — on document_added → assign tag `paperless-gpt-ocr-auto`
+2. **AI Classification after OCR** — on document_updated with tag `ai-process` → webhook to paperless-ai-next
+3. *(pending push)* **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid
+4. *(pending push)* **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid
+5. *(pending push)* **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz
+<!-- [paperless-update:workflows:end] -->
+
+<!-- [paperless-update:saved_views:begin] -->
+### Saved Views
+
+| View | Filter | Sort |
+|------|--------|------|
+| Inbox *(pending push)* | Status = Inbox | newest first |
+| Action needed *(pending push)* | Status = Action needed | oldest first |
+| Waiting *(pending push)* | Status = Waiting | oldest first |
+<!-- [paperless-update:saved_views:end] -->
+
 ## Data Migration (old stack → compose)
 
 See `tasks/prd-docker-compose-migration.md` Section 4.8 for the full migration guide.

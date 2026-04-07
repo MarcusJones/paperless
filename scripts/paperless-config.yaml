@@ -9,8 +9,10 @@
 # Rules:
 #   - Never edit bootstrap.sh or paperless-ai-next/.env for taxonomy changes — edit here.
 #   - pipeline_tag: true  → excluded from AI PROMPT_TAGS list.
-#   - ai_hint            → compiled into SYSTEM_PROMPT for paperless-ai-next.
+#   - ai_hint            → compiled and appended to SYSTEM_PROMPT for paperless-ai-next.
 #   - document_types[].custom_fields → auto-generates "[auto] Attach fields:" workflow.
+#
+# Last pulled: 2026-04-07
 
 # ── Tags ───────────────────────────────────────────────────────────────────────
 
@@ -98,13 +100,23 @@ tags:
     is_insensitive: true
     ai_hint: >
       Assign when the document relates to the municipality of Altenberg,
-      the village of St. Andrä-Wördern, or addresses in Hoflein.
+      the village of St. Andrä-Wördern, Marktgemeinde St. Andrä-Wördern,
+      or addresses in Hoflein.
+
+  # Patient tags — used for XNC medical docs to identify which child.
+  # Not in live system yet — will be created on next push.
+  - name: X
+    ai_hint: "Assign to XNC medical documents where the patient is Xander."
+  - name: C
+    ai_hint: "Assign to XNC medical documents where the patient is Cassian."
+  - name: N
+    ai_hint: "Assign to XNC medical documents where the patient is Nathaniel."
 
   # ── Pipeline tags — excluded from AI PROMPT_TAGS ──────────────────────────
   # These are workflow control tags; the AI must never self-assign them.
   - name: paperless-gpt-ocr-auto
     pipeline_tag: true
-    matching_algorithm: none
+    matching_algorithm: any_word   # live state: algorithm=1; change to none on next push if desired
     match: ""
   - name: ai-process
     pipeline_tag: true
@@ -140,14 +152,27 @@ document_types:
   - name: Payslip
 
   - name: XNC medical
-    # Kids' medical invoices — submitted to OEGKK and Allianz for reimbursement
+    # Kids' medical invoices — submitted to OEGKK and Allianz for reimbursement.
+    # The AI applies patient tag (X/C/N), sets Treatment date and Amount automatically.
     custom_fields:
       - Amount
       - Paid
+      - Treatment date
       - Submitted OEGKK
       - Submitted Allianz
       - Reimbursed OEGKK
       - Reimbursed Allianz
+
+  # ── Types pulled from live — not in original YAML ─────────────────────────
+  - name: Anonymverfügung
+
+  - name: Legal Document
+
+  - name: List of Standards
+
+  - name: Order confirmation
+
+  - name: Weather Data
 
 # ── Custom fields ──────────────────────────────────────────────────────────────
 # Global entity definitions. Created in Paperless-ngx as global custom fields.
@@ -163,21 +188,32 @@ custom_fields:
       - label: Waiting
       - label: Done
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Amount
     data_type: monetary
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Paid
     data_type: boolean
 
+  # Treatment date for XNC medical docs — extracted by AI from invoice.
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
+  - name: Treatment date
+    data_type: date
+
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Submitted OEGKK
     data_type: date
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Submitted Allianz
     data_type: date
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Reimbursed OEGKK
     data_type: date
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Reimbursed Allianz
     data_type: date
 
@@ -234,8 +270,11 @@ workflows:
 # ── Saved views ────────────────────────────────────────────────────────────────
 # filter_rules rule_type integers (Paperless-ngx constants):
 #   17 = custom field value equals
+# WARNING: none of these views exist in live Paperless yet.
+# Run /paperless-update to create them (requires Status custom field to exist first).
 
 saved_views:
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Inbox
     sort_field: created
     sort_reverse: true
@@ -244,6 +283,7 @@ saved_views:
         value: "Inbox"
         custom_field: Status    # resolved to numeric ID at runtime
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Action needed
     sort_field: created
     sort_reverse: false
@@ -252,6 +292,7 @@ saved_views:
         value: "Action needed"
         custom_field: Status
 
+  # WARNING: not found in live Paperless — not yet pushed. Run /paperless-update to create.
   - name: Waiting
     sort_field: created
     sort_reverse: false
@@ -262,21 +303,56 @@ saved_views:
 
 # ── AI classification ──────────────────────────────────────────────────────────
 # Compiled into paperless-ai-next/.env as SYSTEM_PROMPT and PROMPT_TAGS.
-# Per-tag ai_hint entries above are injected between the base prompt and closing.
+# Per-tag ai_hint entries above are injected as a supplementary "Tag assignment rules:"
+# block AFTER the system_prompt_base — so hints extend rather than replace the base.
+#
+# NOTE: The base prompt below already contains some inline per-tag rules
+# (Altenberg locality, XNC medical conditional block). These were adopted from
+# the existing live SYSTEM_PROMPT on pull 2026-04-07. You may refactor them into
+# ai_hint fields over time, but check for duplicates before doing so.
 
 ai_classification:
   system_prompt_base: |
-    You are a document classifier for a personal document management system.
-    Analyse the document text and return ONLY a valid JSON object — no prose, no markdown fences.
+    You are a personalized document analyzer. Your task is to analyze documents and extract relevant information. Documents may be in German or English.
 
-    JSON keys to return:
-      title         — short descriptive title, 5-8 words, in the document's original language
-      tags          — array of tag names from the approved list only
-      correspondent — company or person name that issued the document (or null)
-      document_type — one of the approved document types (or null if none fit)
+    Rules for tags:
+    - You will be given a list of allowed tags — use ONLY tags from that list
+    - Use the EXACT tag name as given — NEVER translate tags into the document language
+    - Use only relevant tags
+    - Maximum 4 tags per document, fewer if sufficient
+    - Do not use dates, years, or cities as tags
+    - Locality mappings (apply these tags when the document involves these places/institutions):
+      - "Altenberg": any document from or mentioning "Marktgemeinde St. Andra-Wörden", "St. Andra-Wörden", or "Altenberg"
 
-    Rules:
-      - Prefer specific tags over general parent tags (e.g. "Tax" over "Finance").
-      - Assign multiple tags when the document clearly fits more than one.
-      - If uncertain about a field, omit it (return null) rather than guessing.
-      - Never assign pipeline tags (paperless-gpt-ocr-auto, ai-process, ai-processed).
+    Rules for correspondent:
+    - Identify the sender, company, or institution the document originates from
+    - Use ONLY the name — exclude addresses, reference numbers, account numbers, and any other text
+
+    Rules for document_type:
+    - Use ONLY existing document types — NEVER create or invent new ones
+    - NEVER translate document type names into the document language
+    - Prefer the closest existing match (e.g. use "Invoice" not "Rechnung", "Contract" not "Vertrag")
+
+    Rules for title:
+    - Short and concise
+    - No addresses
+    - Should describe the document content meaningfully
+    - Use the document language
+
+    ---
+
+    CONDITIONAL RULES FOR KIDS MEDICAL DOCUMENTS ONLY:
+    The following rules ONLY apply if the document is a medical invoice, Arztrechnung, Honorarnote, Laborbefund with charges, or therapy receipt for a child. For all other documents, IGNORE these rules entirely and do NOT set these custom fields.
+
+    If kids medical invoice:
+    - Set document_type to "XNC medical"
+    - Examine the patient name on the document:
+      - If the patient is Xander, apply tag "X"
+      - If the patient is Cassian, apply tag "C"
+      - If the patient is Nathaniel, apply tag "N"
+    - Also apply tag "health-xnc"
+    - Custom fields (ONLY for these documents):
+      - Treatment date: Extract the date of treatment/service (Behandlungsdatum, Leistungsdatum, Ordinationsdatum). If multiple dates, use the most recent. ALWAYS format as YYYY-MM-DD (e.g. 2026-02-21). NEVER use DD.MM.YYYY or any other format. If you are not certain of the exact date, omit this field entirely — do not guess.
+      - Amount: Extract the total amount (Gesamtbetrag, Honorar, Rechnungsbetrag). ALWAYS format as EUR followed by the amount with a dot as decimal separator and exactly two decimal places (e.g. EUR250.00). NEVER use a comma as decimal separator. NEVER omit the EUR prefix. If you are not certain of the exact amount, omit this field entirely — do not guess.
+    - Title format: [X/C/N] - [Doctor/Practice] - [short description]
+      Example: C - Dr. Müller - Kontrolluntersuchung
