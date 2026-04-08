@@ -35,7 +35,7 @@
   },
   "runArgs": [
     "--env-file",
-    "/mnt/c/git/agentic-central/.env"
+    "/home/ubuntu/git/agentic-central/.env"
   ],
   "mounts": [
     "source=/home/ubuntu/git/agentic-central,target=/agentic-central,type=bind,consistency=cached",

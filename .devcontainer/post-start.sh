@@ -8,8 +8,9 @@ WORKSPACE="${1:?Error: containerWorkspaceFolder not provided as argument}"
 
 echo "=================================="
 
-echo "Copyig /agentic-central → .claude/ ..."
+echo "Copying /agentic-central → .claude/ ..."
 mkdir -p .claude ~/.claude
+sudo chown -R "$(id -u):$(id -g)" .claude/
 rsync -a --exclude='.git' /agentic-central/ .claude/
 cp /agentic-central/settings.json ~/.claude/settings.json
 cp /agentic-central/claude.json ~/.claude.json
