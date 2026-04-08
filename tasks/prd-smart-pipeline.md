@@ -103,6 +103,16 @@ Runs on every new document immediately after upload/consume, before any OCR.
 
 **FR-TR4 — Triage thresholds are editable** in the dashboard settings modal (Pipeline tab). Changes take effect immediately for the next document.
 
+**Open question — OQ-TRIAGE-1: Does visual complexity (dense tables, forms) cause Vision OCR to be disproportionately slow?**
+Observation (2026-04-08): a multi-table Austrian medical referral form (Überweisung, ÄrzteZentrale, doc #25) ran for 14+ minutes in Vision OCR (qwen2.5vl:7b) without completing. Tesseract had already extracted key fields ("JONES Xander", doctor name) correctly in Stage 1. It is unknown whether the slowness was caused by the table-heavy layout, document length, model behaviour on this specific content, or an unrelated issue.
+
+Questions to answer before finalising triage heuristics:
+- Does Vision OCR consistently slow down on form/table-heavy documents vs plain-text scans?
+- Was Tesseract quality sufficient for classification on this doc? (Check Content tab in Paperless)
+- Is checking Tesseract word count/quality a reliable fast-path signal?
+
+Until answered, do not assume visual complexity alone is a triage signal.
+
 ### 4.2 OCR Paths
 
 **FR-OCR1 — Fast OCR path:**
@@ -246,18 +256,20 @@ Extends the QuestDB `pipeline_events` table from PRD 1:
 
 ```sql
 CREATE TABLE IF NOT EXISTS pipeline_events (
-  ts           TIMESTAMP,
+  ts           TIMESTAMP,        -- event time (nanosecond precision)
   doc_id       LONG,
-  title        SYMBOL,
-  stage        SYMBOL,      -- triage_start/end, ocr_fast_start/end, ocr_vision_start/end,
-                             -- rules_start/end, llm_start/end
-  model_name   SYMBOL,      -- model used (tesseract, qwen2.5vl:7b, qwen3:14b, etc.)
-  route        SYMBOL,      -- triage decision: fast | vision | llm_prescreen
-  rule_name    SYMBOL,      -- which rule matched (null if none)
-  rule_matched BOOLEAN,     -- did any rule match?
+  stage        SYMBOL,           -- triage | ocr_fast | ocr_vision | rule_engine | llm_classify
+  event        SYMBOL,           -- start | end | error | skip
+  model        SYMBOL,           -- tesseract | qwen2.5vl:7b | qwen3:14b | rule:<rule_id>
+  duration_ms  INT,              -- null on start events; populated on end events
+  route        SYMBOL,           -- triage output: fast | vision
+  matched      BOOLEAN,          -- rule_engine: did a rule match?
+  rule_name    SYMBOL,           -- which rule matched (null if none)
   pages        INT
 ) TIMESTAMP(ts) PARTITION BY DAY;
 ```
+
+The dashboard swimlane chart queries this table by `doc_id`, pairs `start`/`end` events per stage, and renders a horizontal timeline bar per stage — color-coded by stage type, labeled with model name and duration in ms.
 
 ### 4.8 API Routes (New/Extended)
 
@@ -277,6 +289,7 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 
 ## 5. Non-Goals / Out of Scope
 
+- **No custom orchestration code** — Kestra handles DAG execution, branching, and retry logic. No bespoke pipeline runner.
 - **No ML-based triage** — triage uses metadata heuristics + optional LLM pre-screen, not a trained classifier.
 - **No automatic rule promotion** — all rules require human approval. No "auto-add after N matches."
 - **No document re-processing UI** — bulk re-processing (FR-US8) is a CLI/script operation, not a dashboard button (for now).
@@ -333,52 +346,227 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 
 ## 7. Technical Considerations
 
-### Rule Engine Implementation
+### Architecture: Container-per-Step DAG
 
-The rule engine is a TypeScript module in the dashboard (`lib/rule-engine.ts`). It runs server-side in the Next.js API routes.
+Each pipeline stage runs as an independent Docker container. Stages are wired together as a DAG by **Kestra**, a lightweight declarative workflow orchestrator added to `compose.yaml`. The dashboard (Next.js) remains the UI layer for rules, suggestions, and pipeline visibility — it is not the orchestrator.
 
-```typescript
-interface Rule {
-  id: string;
-  name: string;
-  pattern: string;
-  matchType: "exact" | "contains" | "fuzzy" | "regex";
-  confidenceThreshold: number;
-  caseSensitive: boolean;
-  actions: {
-    tags?: string[];
-    documentType?: string;
-    correspondent?: string;
-    customFields?: Record<string, unknown>;
-  };
-  priority: number;
-  enabled: boolean;
-  stats: { hitCount: number; lastMatched: string | null };
-}
-
-interface MatchResult {
-  matched: boolean;
-  rule: Rule | null;
-  confidence: number;
-  matchedText: string;
-}
-
-function evaluateRules(text: string, rules: Rule[]): MatchResult
+```
+Paperless webhook → Kestra (new compose service)
+                         │
+                   [YAML Flow DAG]
+                         │
+         ┌───────────────┼────────────────┐
+         ▼               ▼                ▼
+     triage          ocr-fast         ocr-vision
+     container       container        container
+         │           (if fast)        (if vision)
+         └───────────────┼────────────────┘
+                         ▼
+                   rule-engine
+                   container
+                    │         │
+               matched     unmatched
+                  ▼              ▼
+                done       llm-classify
+                           container
+                               ▼
+                     suggestion → QuestDB → dashboard
 ```
 
-**Fuzzy matching** uses Levenshtein distance (via `fastest-levenshtein` npm package — 15KB, no native deps). For a 500-word document against 100 rules, expected latency is < 50ms.
+Kestra replaces both `paperless-gpt` and `paperless-ai-next`. The Paperless Workflow that previously fired to `paperless-ai-next` now fires to the Kestra webhook trigger.
 
-### Pipeline Orchestration
+### Step Container Contract
 
-The smart pipeline needs an orchestrator that coordinates the stages. Two options:
+Every step container exposes a standard interface:
 
-**Option A — Dashboard orchestrates (recommended for Phase 1):**
-The dashboard's background collector detects new documents via Paperless API polling (or webhook), runs triage, decides the OCR path, applies rules, and calls the LLM if needed. This keeps all intelligence in one place (the Next.js app) but means the dashboard is on the critical path.
+**Input (environment variables injected by Kestra):**
+```
+DOCUMENT_ID        — Paperless document ID
+STEP_CONFIG        — JSON string with step-specific parameters
+WORKSPACE_DIR      — Shared volume path: /pipeline-workspace/<doc_id>/
+QUESTDB_URL        — http://questdb:9000 (for event emission)
+PAPERLESS_URL      — http://paperless:8000
+PAPERLESS_TOKEN    — API token (from Kestra secrets)
+OLLAMA_URL         — http://ollama:11434 (where applicable)
+```
 
-**Option B — Standalone pipeline service:**
-A separate container handles orchestration. More resilient (dashboard down ≠ pipeline down) but adds another service to manage. Better for [PRD 3](prd-hybrid-cloud.md) when services are distributed.
+**Output (one JSON line to stdout):**
+```json
+{ "status": "ok", "route": "fast", "matched": false, "rule_name": null, "metadata": {} }
+```
 
-**Decision:** Start with Option A. If the dashboard becomes a bottleneck or reliability concern, extract to Option B in a future iteration.
+**Exit codes:** `0` = success, `1` = error, `2` = skip (step not applicable)
+
+Kestra reads stdout JSON and maps fields to flow variables for branching conditions (`Switch`, `If`).
+
+### Step Containers
+
+| Step | Replaces | Language | Key Logic |
+|---|---|---|---|
+| `triage` | (new) | Python | PyMuPDF reads PDF metadata; outputs `route: fast\|vision` |
+| `ocr-fast` | Tesseract inside paperless-ngx | Python | Calls Paperless API to retrieve Tesseract-extracted text; no GPU |
+| `ocr-vision` | `paperless-gpt` | Python | Calls Ollama `qwen2.5vl:7b` directly; replaces paperless-gpt polling |
+| `rule-engine` | (new) | Python | Loads `rules.yaml`, runs fuzzy/regex matching; outputs `matched`, `rule_name` |
+| `llm-classify` | `paperless-ai-next` | Python | Calls Ollama `qwen3:14b`; outputs classification + `suggested_rule` |
+
+All step containers extend a shared base image (`paperless-pipeline/base:latest`) that provides the `emit_event()` helper — ensuring no step can skip lifecycle event emission.
+
+### Lifecycle Events (first-class requirement)
+
+Every step container emits two events to QuestDB's line protocol ingestion API: `stage_start` at container startup and `stage_end` before exit. The dashboard reads these events per `doc_id` and renders a swimlane timeline.
+
+```python
+# Base image helper — used by every step
+def emit_event(doc_id: int, stage: str, event: str,
+               model: str = "", duration_ms: int = 0, **extra):
+    line = (
+        f"pipeline_events,doc_id={doc_id},stage={stage},event={event} "
+        f"model=\"{model}\",duration_ms={duration_ms}i "
+        f"{int(time.time() * 1e9)}"
+    )
+    requests.post(f"{os.environ['QUESTDB_URL']}/api/v1/write", data=line)
+```
+
+### Kestra DAG (Flow YAML)
+
+Stored at `kestra/flows/paperless-document-pipeline.yaml`:
+
+```yaml
+id: paperless-document-pipeline
+namespace: paperless
+triggers:
+  - id: webhook
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "{{ secret('KESTRA_WEBHOOK_KEY') }}"
+
+tasks:
+  - id: triage
+    type: io.kestra.plugin.docker.Run
+    containerImage: paperless-pipeline/triage:latest
+    env:
+      DOCUMENT_ID: "{{ trigger.body.document_id }}"
+    outputFiles: ["result.json"]
+    volumes: ["/pipeline-workspace/{{ trigger.body.document_id }}:/workspace"]
+
+  - id: branch_ocr
+    type: io.kestra.plugin.core.flow.Switch
+    value: "{{ outputs.triage.vars.route }}"
+    cases:
+      fast:
+        - id: ocr_fast
+          type: io.kestra.plugin.docker.Run
+          containerImage: paperless-pipeline/ocr-fast:latest
+      vision:
+        - id: ocr_vision
+          type: io.kestra.plugin.docker.Run
+          containerImage: paperless-pipeline/ocr-vision:latest
+          env:
+            OLLAMA_URL: "http://ollama:11434"
+
+  - id: rule_engine
+    type: io.kestra.plugin.docker.Run
+    containerImage: paperless-pipeline/rule-engine:latest
+    volumes: ["/pipeline-workspace/rules:/rules:ro"]
+    outputFiles: ["result.json"]
+
+  - id: llm_classify
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.rule_engine.vars.matched == false }}"
+    then:
+      - id: classify
+        type: io.kestra.plugin.docker.Run
+        containerImage: paperless-pipeline/llm-classify:latest
+        env:
+          OLLAMA_URL: "http://ollama:11434"
+```
+
+### compose.yaml Changes
+
+Add Kestra (mounts Docker socket to run step containers):
+
+```yaml
+kestra:
+  image: kestra/kestra:latest
+  ports:
+    - "8090:8080"      # Kestra UI + API
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ./kestra/flows:/flows
+    - ./pipeline-workspace:/pipeline-workspace
+  depends_on:
+    - postgres
+```
+
+Kestra uses the existing `postgres` container (a second database within the same instance). Remove `paperless-gpt` and `paperless-ai-next` services after shadow-run validation.
+
+### Rule Engine Implementation
+
+The rule engine runs as a Python container, not as TypeScript inside the dashboard. The dashboard manages the `rules.yaml` file via its API (`/api/rules`), which the `rule-engine` container mounts read-only.
+
+Rule data model (unchanged from §4.3, now implemented in Python):
+
+```python
+@dataclass
+class Rule:
+    id: str
+    name: str
+    pattern: str
+    match_type: Literal["exact", "contains", "fuzzy", "regex"]
+    confidence_threshold: int  # 0-100
+    case_sensitive: bool
+    actions: dict              # tags, document_type, correspondent
+    priority: int
+    enabled: bool
+
+@dataclass
+class MatchResult:
+    matched: bool
+    rule: Rule | None
+    confidence: float
+    matched_text: str
+```
+
+**Fuzzy matching** uses `rapidfuzz` (Python, C extension, ~3x faster than `python-Levenshtein`). For 500-word document against 100 rules: expected < 50ms.
+
+### LLM Prompt Design
+
+The classification prompt is intentionally lean:
+
+```
+You are classifying a document that didn't match any known patterns.
+
+Available taxonomy:
+- Tags: {tag_list}
+- Document types: {type_list}
+- Correspondents: {correspondent_list}
+
+Document text (first 2000 chars):
+{text}
+
+Respond in JSON:
+{
+  "tags": ["..."],
+  "document_type": "...",
+  "correspondent": "...",
+  "suggested_rule": {
+    "pattern": "the key identifying text you used",
+    "match_type": "contains",
+    "reasoning": "why this pattern identifies this class of document"
+  }
+}
+```
+
+No pattern-matching instructions. No "if X then Y" lists. The taxonomy list is the only context. This keeps the prompt under 1000 tokens for most cases.
+
+### Migration from Current Pipeline
+
+The current pipeline (Tesseract → paperless-gpt → paperless-ai-next) continues to work unchanged. The smart pipeline runs in parallel initially:
+
+1. **Week 1:** Kestra pipeline runs on new documents but only logs decisions (no writes to Paperless). Compare its routing/classification decisions with the current pipeline's results.
+2. **Week 2:** Kestra pipeline handles new documents. Current pipeline is fallback.
+3. **Week 3+:** Remove `paperless-gpt` and `paperless-ai-next` from `compose.yaml`. Kestra is primary.
+
+This avoids a risky cutover and lets the rule engine build up suggestions during the comparison period.
 
 ### LLM Prompt Design
 
@@ -440,9 +628,9 @@ This avoids a risky cutover and lets the rule engine build up suggestions during
 
 | # | Question | Owner | Notes |
 |---|----------|-------|-------|
-| OQ1 | How does the smart pipeline integrate with paperless-gpt? | Implementation | paperless-gpt currently polls by tag. Smart pipeline needs to control when Vision OCR runs, not let paperless-gpt decide. May need to disable paperless-gpt polling and call Ollama directly from the dashboard. |
+| OQ1 | ~~How does the smart pipeline integrate with paperless-gpt?~~ | ~~Implementation~~ | **Resolved:** `paperless-gpt` is replaced by the `ocr-vision` step container. The `ocr-fast` step uses the Tesseract text already extracted by Paperless-ngx via API. The `ocr-pending` / `classification-pending` tag workflow is replaced by the Kestra webhook trigger fired from Paperless Workflow 1. |
 | OQ2 | Should the triage LLM pre-screen use a separate model? | Marcus | qwen3:1.7b is fast but requires a model swap if the main model is larger. Could use the same model with a shorter prompt instead. |
-| OQ3 | Fuzzy matching library — `fastest-levenshtein` vs `fuse.js`? | Implementation | `fuse.js` handles multi-field fuzzy search out of the box. `fastest-levenshtein` is simpler but single-pattern. `fuse.js` may be better for matching against document text. |
+| OQ3 | Fuzzy matching library — `python-Levenshtein` vs `rapidfuzz`? | Implementation | `rapidfuzz` is the modern replacement: faster (C extension), same API, handles partial ratios and multi-string scoring. Use `rapidfuzz`. |
 | OQ4 | Should rules be able to set custom field values (Amount, PaidBy, etc.)? | Marcus | Current scope is tags + document type + correspondent. Custom field extraction is more complex — likely needs the LLM. |
-| OQ5 | Bulk re-processing — how to run the rule engine against existing 300+ docs? | Implementation | Script that fetches all docs from Paperless API, runs rule engine, reports matches. Doesn't auto-apply — shows a preview. |
-| OQ6 | Should paperless-ai-next be absorbed into the dashboard? | Marcus | The smart pipeline's LLM stage does what paperless-ai-next does. Running both is redundant. But removing it is a bigger change. |
+| OQ5 | Bulk re-processing — how to run the rule engine against existing 300+ docs? | Implementation | Script that fetches all docs from Paperless API, calls the `rule-engine` container per doc (or in batch), reports matches. Doesn't auto-apply — shows a preview. |
+| OQ6 | ~~Should paperless-ai-next be absorbed into the dashboard?~~ | ~~Marcus~~ | **Resolved:** `paperless-ai-next` is replaced by the `llm-classify` step container. Both `paperless-gpt` and `paperless-ai-next` are removed from `compose.yaml` after shadow-run validation (see §7 Migration). |

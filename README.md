@@ -219,6 +219,16 @@ These two models **cannot coexist** in 12 GB VRAM. `OLLAMA_MAX_LOADED_MODELS=1` 
 
 `qwen3-vl` is a "thinking" model with a 256K native context window. Even for a single page image, its architecture allocates KV cache proportional to that 256K ceiling — this causes 5–14 min per page even on high-end GPUs (confirmed upstream issue QwenLM/Qwen3-VL#1923, reproducible on A100s). `qwen2.5vl:7b` uses the same model family but without the thinking mode overhead and with efficient image tokenization.
 
+### ⚠️ Ollama pinned to 0.12.0 — do not upgrade yet
+
+`compose.yaml` pins `ollama/ollama:0.12.0`. **Do not change this to `latest`.**
+
+Ollama 0.13.x rewrote the model runner from C++ (llama.cpp) to Go. The new Go KV cache eviction code (`causal.go`) calls `Shift()` with a raw delta tensor of shape `[n_tokens]` instead of the `[n_tokens × 4]` layout required by `ggml_rope_multi`. qwen2.5vl uses **M-RoPE** (multi-dimensional Rotary Position Embedding) — three independent position axes per image patch token (temporal, row, column) — so the positions tensor must be 4× wider than the token count. The C assertion `GGML_ASSERT(a->ne[2] * 4 == b->ne[0])` fires when image tokens fill the KV cache and eviction is triggered.
+
+**Track fix:** https://github.com/ollama/ollama/issues/13630
+
+When that issue closes, update `compose.yaml` to `ollama/ollama:latest` and test with a multi-page scanned document.
+
 ### Watch list
 
 `glm-ocr` (Zhipu AI, March 2026) — only 2.2 GB, ranked #1 on OmniDocBench at 94.62 accuracy, 1.86 pages/sec throughput. Currently has a bug in paperless-gpt with high-res images (issue icereed/paperless-gpt#880, fix pending). When that merges, switching to `glm-ocr` will free ~6 GB VRAM during Stage 2, eliminating the model-swap delay between Stage 2 and Stage 3 entirely.

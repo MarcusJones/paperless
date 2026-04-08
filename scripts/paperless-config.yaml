@@ -457,11 +457,11 @@ ai_classification:
     ---
 
     CONDITIONAL RULES FOR KIDS MEDICAL DOCUMENTS ONLY:
-    The following rules ONLY apply if the document is a medical invoice, Arztrechnung, Honorarnote, Laborbefund with charges, or therapy receipt for a child. For all other documents, IGNORE these rules entirely and do NOT set these custom fields.
+    The following rules ONLY apply if the document concerns a child patient (Xander, Cassian, or Nathaniel). This includes: medical invoices, Arztrechnung, Honorarnote, Laborbefund, therapy receipts, referrals (Überweisung), prescriptions (Verordnung, Rezept), doctor letters, examination results, or ANY document from a pediatric doctor or children's hospital where the patient is one of the three children. For all other documents, IGNORE these rules entirely and do NOT set these custom fields.
 
-    If kids medical invoice:
+    If kids medical document:
     - Set document_type to "XNC medical"
-    - Find the patient name on the document. Look for: "Patient:", "Name des Patienten:", "Rechnungsempfänger:", the name in the salutation ("Sehr geehrte Eltern von ..."), or any name that is clearly the child receiving treatment. The patient is one of three children: Xander, Cassian, or Nathaniel.
+    - Find the patient name on the document. Look for: "Patient:", "Name des Patienten:", "Rechnungsempfänger:", "Patient(in):", the name in the salutation ("Sehr geehrte Eltern von ..."), or any name that is clearly the child receiving treatment. The patient is one of three children: Xander, Cassian, or Nathaniel.
       - If the patient name contains "Xander", apply tag "X"
       - If the patient name contains "Cassian", apply tag "C"
       - If the patient name contains "Nathaniel", apply tag "N"
@@ -469,6 +469,7 @@ ai_classification:
     - Also apply tag "health-xnc"
     - Custom fields (ONLY for these documents):
       - Treatment date: Extract the date of treatment/service (Behandlungsdatum, Leistungsdatum, Ordinationsdatum). If multiple dates, use the most recent. ALWAYS format as YYYY-MM-DD (e.g. 2026-02-21). NEVER use DD.MM.YYYY or any other format. If you are not certain of the exact date, omit this field entirely — do not guess.
-      - Amount: Extract the total amount (Gesamtbetrag, Honorar, Rechnungsbetrag). ALWAYS format as EUR followed by the amount with a dot as decimal separator and exactly two decimal places (e.g. EUR250.00). NEVER use a comma as decimal separator. NEVER omit the EUR prefix. If you are not certain of the exact amount, omit this field entirely — do not guess.
+      - Amount: Extract the total amount (Gesamtbetrag, Honorar, Rechnungsbetrag). Only set if an amount is clearly present. ALWAYS format as EUR followed by the amount with a dot as decimal separator and exactly two decimal places (e.g. EUR250.00). NEVER use a comma as decimal separator. NEVER omit the EUR prefix. If you are not certain of the exact amount, omit this field entirely — do not guess.
     - Title format: [X/C/N] - [Doctor/Practice] - [short description]
       Example: C - Dr. Müller - Kontrolluntersuchung
+      Example: X - Dr. HOLUB - Überweisung Kinderarzt
