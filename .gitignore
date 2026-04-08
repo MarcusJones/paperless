@@ -28,3 +28,4 @@ questdb/data/
 apps/dashboard/.next/
 apps/dashboard/node_modules/
 node_modules/
+.pnpm-store/

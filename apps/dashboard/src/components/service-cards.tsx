@@ -7,6 +7,7 @@ interface ServiceStatus {
   name: string;
   url: string;
   dozzleContainer: string;
+  dozzleContainerId?: string;
   status: "green" | "yellow" | "red";
   latencyMs: number;
   stats?: {
@@ -26,7 +27,8 @@ const STATUS_COLOR: Record<string, string> = {
 const DOZZLE_BASE = "http://localhost:9999";
 
 function ServiceCard({ svc }: { svc: ServiceStatus }) {
-  const dozzleUrl = `${DOZZLE_BASE}/container/${svc.dozzleContainer}`;
+  const dozzleTarget = svc.dozzleContainerId ?? svc.dozzleContainer;
+  const dozzleUrl = `${DOZZLE_BASE}/container/${dozzleTarget}`;
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 flex flex-col gap-3 min-w-[180px]">

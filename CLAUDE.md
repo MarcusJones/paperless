@@ -357,6 +357,7 @@ Experienced full stack engineer and former CTO. Familiar with Python; TypeScript
 
 - **NEVER start the dev server** or any long-running processes unless explicitly asked.
 - After implementation, summarize what was built and suggest next steps.
+- **Never add `Co-Authored-By: Claude` to commit messages.**
 
 ## Code Quality
 

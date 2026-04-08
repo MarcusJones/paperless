@@ -14,9 +14,9 @@ export interface StackConfig {
   services: Record<string, ServiceConfig>;
 }
 
-const CONFIG_PATH =
-  process.env.CONFIG_PATH ??
-  path.join(process.cwd(), "config", "stack.yaml");
+// Fallback is the production Docker path (/app/config/stack.yaml).
+// Set CONFIG_PATH env var to override in other environments.
+const CONFIG_PATH = process.env.CONFIG_PATH ?? "/app/config/stack.yaml";
 
 // In-memory cache; reload on each request (file is small)
 export function readConfig(): StackConfig {

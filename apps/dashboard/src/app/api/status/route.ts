@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Dockerode from "dockerode";
 import { readConfig, type ServiceConfig } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,32 @@ interface ServiceStatus extends ServiceConfig {
   key: string;
   status: "green" | "yellow" | "red";
   latencyMs: number;
+  dozzleContainerId?: string; // short 12-char Docker ID for Dozzle URL
   stats?: Record<string, unknown>;
+}
+
+// Resolve container names → short IDs via Docker socket.
+// Returns {} gracefully if Docker is unavailable (e.g. devcontainer).
+async function resolveContainerIds(
+  names: string[]
+): Promise<Record<string, string>> {
+  try {
+    const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
+    const containers = await docker.listContainers({ all: false });
+    const map: Record<string, string> = {};
+    for (const c of containers) {
+      const shortId = c.Id.slice(0, 12);
+      for (const rawName of c.Names) {
+        const name = rawName.replace(/^\//, "");
+        if (names.includes(name)) {
+          map[name] = shortId;
+        }
+      }
+    }
+    return map;
+  } catch {
+    return {};
+  }
 }
 
 // Probe a single service endpoint and measure latency.
@@ -150,12 +176,26 @@ async function fetchQuestDbStats(): Promise<Record<string, unknown>> {
 
 export async function GET() {
   const config = readConfig();
-  const probes = Object.entries(config.services).map(([key, svc]) =>
-    probeService(key, svc)
-  );
-  const results = await Promise.all(probes);
 
-  return NextResponse.json(results, {
+  const containerNames = Object.values(config.services).map(
+    (s) => s.dozzleContainer
+  );
+
+  const [results, idMap] = await Promise.all([
+    Promise.all(
+      Object.entries(config.services).map(([key, svc]) =>
+        probeService(key, svc)
+      )
+    ),
+    resolveContainerIds(containerNames),
+  ]);
+
+  const withIds = results.map((r) => ({
+    ...r,
+    dozzleContainerId: idMap[r.dozzleContainer],
+  }));
+
+  return NextResponse.json(withIds, {
     headers: { "Cache-Control": "no-store" },
   });
 }
