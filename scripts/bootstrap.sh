@@ -3,7 +3,7 @@
 #
 # Creates:
 #   - Nested tags (Finance/Tax, Health/Medical, etc.)
-#   - Workflow tags (paperless-gpt-ocr-auto, ai-process, ai-processed)
+#   - Workflow tags (ocr-pending, classification-pending, processed)
 #   - Document types (Invoice, Contract, Receipt, ...)
 #   - Status custom field (select: Inbox / Action needed / Waiting / Done)
 #   - XNC Medical document type (for kids medical invoices)
@@ -203,12 +203,12 @@ echo "  -> Altenberg: match literal 'St. Andra-Wörden'"
 
 # Pipeline / workflow tags (NOT in PROMPT_TAGS — AI must never self-assign these)
 # Capture IDs — needed below when creating workflows
-OCR_TAG_ID=$(create_tag "paperless-gpt-ocr-auto")
-echo "  -> paperless-gpt-ocr-auto (Stage 1→2: triggers vision OCR) [id=${OCR_TAG_ID}]"
-AI_PROCESS_TAG_ID=$(create_tag "ai-process")
-echo "  -> ai-process            (Stage 2→3: triggers AI classification) [id=${AI_PROCESS_TAG_ID}]"
-AI_PROCESSED_TAG_ID=$(create_tag "ai-processed")
-echo "  -> ai-processed          (Stage 3 complete: classification done) [id=${AI_PROCESSED_TAG_ID}]"
+OCR_TAG_ID=$(create_tag "ocr-pending")
+echo "  -> ocr-pending               (Stage 1→2: triggers vision OCR) [id=${OCR_TAG_ID}]"
+AI_PROCESS_TAG_ID=$(create_tag "classification-pending")
+echo "  -> classification-pending    (Stage 2→3: triggers AI classification) [id=${AI_PROCESS_TAG_ID}]"
+AI_PROCESSED_TAG_ID=$(create_tag "processed")
+echo "  -> processed                 (Stage 3 complete: classification done) [id=${AI_PROCESSED_TAG_ID}]"
 # [paperless-update:tags:end]
 
 # ── Document types ─────────────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ echo "  -> correspondent/year/title"
 echo ""
 echo "--> Creating workflows..."
 
-# Workflow 1: every new document → assign paperless-gpt-ocr-auto → queues vision OCR
+# Workflow 1: every new document → assign ocr-pending → queues vision OCR
 create_workflow "Auto Vision OCR" "$(cat <<EOF
 {
   "name": "Auto Vision OCR",
@@ -300,10 +300,10 @@ create_workflow "Auto Vision OCR" "$(cat <<EOF
 EOF
 )"
 
-# Workflow 2: document updated + has ai-processed tag → remove ai-process (cleanup)
-create_workflow "Remove ai-process after classification" "$(cat <<EOF
+# Workflow 2: document updated + has processed tag → remove classification-pending (cleanup)
+create_workflow "Remove classification-pending after processing" "$(cat <<EOF
 {
-  "name": "Remove ai-process after classification",
+  "name": "Remove classification-pending after processing",
   "order": 10,
   "enabled": true,
   "triggers": [
@@ -331,7 +331,7 @@ create_workflow "Remove ai-process after classification" "$(cat <<EOF
 EOF
 )"
 
-# Workflow 3: document updated + has ai-process tag → webhook to paperless-ai-next
+# Workflow 3: document updated + has classification-pending tag → webhook to paperless-ai-next
 create_workflow "AI Classification after OCR" "$(cat <<EOF
 {
   "name": "AI Classification after OCR",
@@ -436,10 +436,10 @@ PAPERLESS_API_URL=http://paperless:8000
 PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
 PAPERLESS_USERNAME=root
 PROCESS_PREDEFINED_DOCUMENTS=yes
-TAGS=ai-process
+TAGS=classification-pending
 IGNORE_TAGS=
 ADD_AI_PROCESSED_TAG=yes
-AI_PROCESSED_TAG_NAME=ai-processed
+AI_PROCESSED_TAG_NAME=processed
 DISABLE_AUTOMATIC_PROCESSING=no
 SCAN_INTERVAL=*/5 * * * *
 AI_PROVIDER=ollama

@@ -110,8 +110,8 @@ services:
       - ./paperless-ai-next/data:/app/data
 
   paperless-gpt:
-    # Vision OCR: watches for `paperless-gpt-ocr-auto` tag, runs qwen2.5vl:7b,
-    # then adds `ai-process` tag to trigger AI classification.
+    # Vision OCR: watches for `ocr-pending` tag, runs qwen2.5vl:7b,
+    # then adds `classification-pending` tag to trigger AI classification.
     # UI: http://localhost:8080
     image: icereed/paperless-gpt:latest
     restart: unless-stopped

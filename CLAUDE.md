@@ -32,9 +32,9 @@ Docker-based Paperless-ngx document management system with AI tagging, running l
 ```
 
 1. **Paperless-ngx** (:8000) — ingests from Dropbox consume folder, runs Tesseract OCR
-   - Workflow "Auto Vision OCR": assigns `paperless-gpt-ocr-auto` tag to every new document
-2. **paperless-gpt** (:8080) — detects `paperless-gpt-ocr-auto`, runs vision OCR, then adds `ai-process` tag
-3. **paperless-ai-next** (:3000) — webhook-triggered on `ai-process` tag; fallback cron every 5 min
+   - Workflow "Auto Vision OCR": assigns `ocr-pending` tag to every new document
+2. **paperless-gpt** (:8080) — detects `ocr-pending`, runs vision OCR, then adds `classification-pending` tag
+3. **paperless-ai-next** (:3000) — webhook-triggered on `classification-pending` tag; fallback cron every 5 min
 
 **Model swap:** qwen2.5vl:7b → qwen3:14b adds ~10-20s between Stage 2 and 3. Both models cannot coexist in 12GB VRAM simultaneously (`OLLAMA_MAX_LOADED_MODELS=1`).
 
@@ -137,16 +137,16 @@ Ollama (host:11434)          — serves both models (sequential, one at a time)
 
 ### paperless-gpt (icereed/paperless-gpt) — Vision OCR
 
-- Watches for `paperless-gpt-ocr-auto` tag (set by Paperless Workflow on every new document)
+- Watches for `ocr-pending` tag (set by Paperless Workflow on every new document)
 - Converts PDF pages → images → qwen2.5vl:7b → replaces document text
-- Removes `paperless-gpt-ocr-auto`, adds `ai-process` tag (configured via `PDF_OCR_COMPLETE_TAG`)
+- Removes `ocr-pending`, adds `classification-pending` tag (configured via `PDF_OCR_COMPLETE_TAG`)
 - Tagging mode disabled (`AUTO_TAG=""`) — classification is handled by paperless-ai-next
 - Config: `./paperless-gpt/.env`
 - Debug: `docker compose logs paperless-gpt`, UI at `:8080`
 
 ### paperless-ai-next (admonstrator/paperless-ai-next) — AI Classification
 
-- **Webhook-triggered**: Paperless Workflow fires `POST http://paperless-ai-next:3000/api/webhook/document` when `ai-process` tag is applied
+- **Webhook-triggered**: Paperless Workflow fires `POST http://paperless-ai-next:3000/api/webhook/document` when `classification-pending` tag is applied
 - Fallback: cron polling every 5 min (`SCAN_INTERVAL=*/5 * * * *`) catches missed webhooks
 - **CRITICAL: Setup wizard required** once at `http://localhost:3000/setup`
 - Config: `./paperless-ai-next/.env` (SYSTEM_PROMPT, PROMPT_TAGS, OLLAMA_MODEL)
@@ -156,11 +156,11 @@ Ollama (host:11434)          — serves both models (sequential, one at a time)
 
 **Workflow 1 — Auto Vision OCR**
 - Trigger: Document Added
-- Action: Assign tag → `paperless-gpt-ocr-auto`
+- Action: Assign tag → `ocr-pending`
 
 **Workflow 2 — AI Classification after OCR**
 - Trigger: Document Updated
-- Condition: has tag `ai-process`
+- Condition: has tag `classification-pending`
 - Action: Webhook POST → `http://paperless-ai-next:3000/api/webhook/document`
 - Header: `x-api-key: <PAPERLESS_AI_NEXT_API_KEY>`
 - Body: `{"doc_url": "{{ doc_url }}"}`
@@ -172,9 +172,9 @@ Ollama (host:11434)          — serves both models (sequential, one at a time)
 | `USE_PROMPT_TAGS=yes` | AI can only assign tags from `PROMPT_TAGS` list |
 | `PROMPT_TAGS=...` | Comma-separated whitelist (in `paperless-ai-next/.env`, excludes workflow tags) |
 | `RESTRICT_TO_EXISTING_TAGS=yes` | Backup: drops any tag not already in Paperless-ngx |
-| `ADD_AI_PROCESSED_TAG=yes` | Adds `ai-processed` marker tag after processing |
-| `PROCESS_PREDEFINED_DOCUMENTS=yes` + `TAGS=ai-process` | Only process docs with the trigger tag |
-| `PDF_OCR_COMPLETE_TAG=ai-process` | paperless-gpt adds this tag after OCR — triggers Stage 3 |
+| `ADD_AI_PROCESSED_TAG=yes` | Adds `processed` marker tag after processing |
+| `PROCESS_PREDEFINED_DOCUMENTS=yes` + `TAGS=classification-pending` | Only process docs with the trigger tag |
+| `PDF_OCR_COMPLETE_TAG=classification-pending` | paperless-gpt adds this tag after OCR — triggers Stage 3 |
 
 ### Common AI Tagging Failures
 
@@ -230,7 +230,7 @@ curl -s http://localhost:11434/api/generate \
 
 **Patient tags (XNC medical):** X *(Xander)*, C *(Cassian)*, N *(Nathaniel)*
 
-**Pipeline (not AI-assignable):** paperless-gpt-ocr-auto, ai-process, ai-processed
+**Pipeline (not AI-assignable):** ocr-pending, classification-pending, processed
 <!-- [paperless-update:tags:end] -->
 
 <!-- [paperless-update:document_types:begin] -->
@@ -276,9 +276,9 @@ curl -s http://localhost:11434/api/generate \
 <!-- [paperless-update:workflows:begin] -->
 ### Workflows
 
-1. **Auto Vision OCR** — on document_added → assign tag `paperless-gpt-ocr-auto`
-2. **Remove ai-process after classification** — on document_updated with tag `ai-processed` → remove tag `ai-process`
-3. **AI Classification after OCR** — on document_updated with tag `ai-process` → webhook to paperless-ai-next
+1. **Auto Vision OCR** — on document_added → assign tag `ocr-pending`
+2. **Remove classification-pending after processing** — on document_updated with tag `processed` → remove tag `classification-pending`
+3. **AI Classification after OCR** — on document_updated with tag `classification-pending` → webhook to paperless-ai-next
 4. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
 5. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
 6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz

@@ -122,13 +122,13 @@ tags:
 
   # ── Pipeline tags — excluded from AI PROMPT_TAGS ──────────────────────────
   # These are workflow control tags; the AI must never self-assign them.
-  - name: paperless-gpt-ocr-auto
+  - name: ocr-pending
     pipeline_tag: true
-    matching_algorithm: any_word   # live state: algorithm=1; change to none on next push if desired
+    matching_algorithm: any_word
     match: ""
-  - name: ai-process
+  - name: classification-pending
     pipeline_tag: true
-  - name: ai-processed
+  - name: processed
     pipeline_tag: true
 
 # ── Document types ─────────────────────────────────────────────────────────────
@@ -268,9 +268,9 @@ workflows:
     actions:
       - type: assign_tag
         assign_tags:
-          - ref: paperless-gpt-ocr-auto   # resolved to numeric ID at runtime
+          - ref: ocr-pending              # resolved to numeric ID at runtime
 
-  - name: Remove ai-process after classification
+  - name: Remove classification-pending after processing
     order: 10
     enabled: true
     triggers:
@@ -279,12 +279,12 @@ workflows:
         matching_algorithm: none
         filter_has_tags: []
         filter_has_all_tags:
-          - ref: ai-processed          # fires when paperless-ai-next marks doc as done
+          - ref: processed             # fires when paperless-ai-next marks doc as done
         filter_has_not_tags: []
     actions:
       - type: removal
         remove_tags:
-          - ref: ai-process            # clean up the trigger tag
+          - ref: classification-pending  # clean up the trigger tag
 
   - name: AI Classification after OCR
     order: 2
@@ -295,7 +295,7 @@ workflows:
         matching_algorithm: none
         filter_has_tags: []
         filter_has_all_tags:
-          - ref: ai-process               # fires when ai-process tag is applied
+          - ref: classification-pending   # fires when classification-pending tag is applied
         filter_has_not_tags: []
     actions:
       - type: webhook
@@ -373,6 +373,34 @@ saved_views:
       - rule_type: 17
         value: "Waiting"
         custom_field: Status
+
+  # Pipeline monitoring views — track documents moving through OCR/AI stages.
+  - name: "OCR Pending"
+    sort_field: added
+    sort_reverse: false
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 6
+        value: "26"   # tag ID: ocr-pending
+
+  - name: "Classification Pending"
+    sort_field: added
+    sort_reverse: false
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 6
+        value: "27"   # tag ID: classification-pending
+
+  - name: "Processed"
+    sort_field: created
+    sort_reverse: true
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 6
+        value: "28"   # tag ID: processed
 
   - name: "XNC Medical: Reimbursed"
     sort_field: created

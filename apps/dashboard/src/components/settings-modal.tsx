@@ -262,8 +262,8 @@ export function SettingsModal() {
                 <div className="space-y-2">
                   <PipelineRow label="Vision OCR model" value="qwen2.5vl:7b" />
                   <PipelineRow label="Classify model" value="qwen3:14b" />
-                  <PipelineRow label="OCR trigger tag" value="paperless-gpt-ocr-auto" />
-                  <PipelineRow label="Classify trigger tag" value="ai-process" />
+                  <PipelineRow label="OCR trigger tag" value="ocr-pending" />
+                  <PipelineRow label="Classify trigger tag" value="classification-pending" />
                   <PipelineRow label="Max loaded models" value="1 (VRAM limit)" />
                 </div>
 

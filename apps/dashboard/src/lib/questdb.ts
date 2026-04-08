@@ -118,7 +118,7 @@ export async function ensureTables(): Promise<void> {
       gpu_pct    INT,
       vram_used  INT,
       vram_total INT
-    ) TIMESTAMP(ts) PARTITION BY HOUR TTL 7d;
+    ) TIMESTAMP(ts) PARTITION BY HOUR ;
   `;
   const eventsDdl = `
     CREATE TABLE IF NOT EXISTS pipeline_events (
@@ -128,7 +128,7 @@ export async function ensureTables(): Promise<void> {
       stage      SYMBOL,
       model_name SYMBOL,
       pages      INT
-    ) TIMESTAMP(ts) PARTITION BY DAY TTL 7d;
+    ) TIMESTAMP(ts) PARTITION BY DAY ;
   `;
   await query(gpuDdl);
   await query(eventsDdl);

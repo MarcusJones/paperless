@@ -132,11 +132,11 @@ Both workflows are created automatically by `./scripts/bootstrap.sh` — no manu
 
 **Workflow 1 — Auto Vision OCR**
 - Trigger: Document Added
-- Action: Assign tag → `paperless-gpt-ocr-auto`
+- Action: Assign tag → `ocr-pending`
 
 **Workflow 2 — AI Classification after OCR**
 - Trigger: Document Updated
-- Condition: has tag `ai-process`
+- Condition: has tag `classification-pending`
 - Action: Webhook POST → `http://paperless-ai-next:3000/api/webhook/document`
 - Header: `x-api-key: <PAPERLESS_AI_NEXT_API_KEY>` (from your `.env`)
 - Body: `{"doc_url": "{{ doc_url }}"}`
@@ -184,15 +184,15 @@ Drop file into consume folder
         ↓
 1. Paperless-ngx (:8000)
    Ingests file, runs Tesseract OCR, stores it.
-   Workflow assigns tag: paperless-gpt-ocr-auto
+   Workflow assigns tag: ocr-pending
         ↓
 2. paperless-gpt (:8080)
-   Detects paperless-gpt-ocr-auto tag.
+   Detects ocr-pending tag.
    Re-OCRs using qwen3-vl:8b (vision LLM) — much better on scanned/handwritten docs.
-   Removes paperless-gpt-ocr-auto, adds: ai-process
+   Removes ocr-pending, adds: classification-pending
         ↓
 3. paperless-ai-next (:3000)
-   Webhook fires immediately when ai-process tag is applied.
+   Webhook fires immediately when classification-pending tag is applied.
    Sends text to qwen3:14b via Ollama.
    Assigns title, tags, correspondent, document type.
    Fallback: cron polls every 5 min for missed webhooks.
@@ -291,9 +291,9 @@ Car     /  Car Insurance, Service
 Work    /  Payslip, Employment
 
 Top-level: Bank, School, Munster, Hoflein, Heinl, Altenberg
-Pipeline:  paperless-gpt-ocr-auto  ← triggers vision OCR (Stage 2)
-           ai-process              ← triggers AI classification (Stage 3)
-           ai-processed            ← marks completed AI classification
+Pipeline:  ocr-pending              ← triggers vision OCR (Stage 2)
+           classification-pending  ← triggers AI classification (Stage 3)
+           processed               ← marks completed AI classification
 ```
 
 **Status** — custom Select field: `Inbox` → `Action needed` → `Waiting` → `Done`
@@ -377,7 +377,7 @@ sudo systemctl stop ollama && sudo systemctl disable ollama
 ### OCR quality is poor
 
 Tesseract struggles with scanned documents. paperless-gpt handles this via vision OCR.
-Confirm the `paperless-gpt-ocr-auto` tag exists and Workflow 1 is configured.
+Confirm the `ocr-pending` tag exists and Workflow 1 is configured.
 
 ### View all logs
 

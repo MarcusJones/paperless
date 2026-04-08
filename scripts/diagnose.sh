@@ -166,7 +166,7 @@ echo ""
 
 # ── Check 9: Pipeline tags ────────────────────────────────────────────────────
 echo "[9] Pipeline tags exist in Paperless-ngx"
-PIPELINE_TAGS=("paperless-gpt-ocr-auto" "ai-process" "ai-processed")
+PIPELINE_TAGS=("ocr-pending" "classification-pending" "processed")
 if [[ "$http_code" == "200" ]]; then
   tags_json=$(curl -sf --max-time 10 \
     "http://localhost:${PAPERLESS_PORT}/api/tags/?page_size=200" \
