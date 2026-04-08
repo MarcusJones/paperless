@@ -226,4 +226,4 @@ services:
     command:
       - sh
       - -c
-      - "apk add --quiet --no-progress gawk >/dev/null 2>&1 && exec /scripts/pipeline-timing-container.sh"
+      - "apk add --no-progress gawk 1>&2 && exec /scripts/pipeline-timing-container.sh"
