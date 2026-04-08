@@ -212,6 +212,7 @@ services:
     # Merges logs from the three AI pipeline containers and emits per-document
     # stage timing — visible in Dozzle at :9999 alongside all other services.
     # Example: [2026-04-06 17:03:55]  DOC #5      Ingest: 4s  VisionOCR: 47s (3pg, 15s/pg)  Swap: 12s  Classify: 18s  TOTAL: 81s
+    # Set OUTPUT_FORMAT=jsonl to emit JSON Lines for the dashboard collector.
     image: docker:cli
     restart: unless-stopped
     depends_on:
@@ -222,8 +223,51 @@ services:
       - ./scripts:/scripts:ro
     environment:
       COMPOSE_PROJECT_NAME: paperless
+      OUTPUT_FORMAT: jsonl
+      PAPERLESS_URL: http://paperless:8000
+      PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
     entrypoint: []
     command:
       - sh
       - -c
-      - "apk add --no-progress gawk 1>&2 && exec /scripts/pipeline-timing-container.sh"
+      - "apk add --no-progress gawk curl 1>&2 && exec /scripts/pipeline-timing-container.sh"
+
+  # ── Dashboard & Observability ────────────────────────────────────────────────
+
+  questdb:
+    # Lightweight time-series database for GPU metrics and pipeline events.
+    # Web UI: http://localhost:9000
+    # REST API: http://localhost:9000/exec?query=...
+    image: questdb/questdb:8.2.1
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # web UI + REST API
+      - "9009:9009"   # ILP (InfluxDB line protocol ingestion)
+      - "8812:8812"   # PostgreSQL wire protocol
+    volumes:
+      - ./questdb/data:/var/lib/questdb
+    environment:
+      QDB_TELEMETRY_ENABLED: "false"
+
+  dashboard:
+    # Single-pane dashboard: service status, GPU/pipeline timeline, settings.
+    # URL: http://localhost:5000
+    build: ./apps/dashboard
+    restart: unless-stopped
+    ports:
+      - "5000:3000"
+    depends_on:
+      - questdb
+      - paperless
+    environment:
+      PAPERLESS_URL: http://paperless:8000
+      PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
+      QUESTDB_URL: http://questdb:9000
+      OLLAMA_URL: http://ollama:11434
+      PIPELINE_TIMING_CONTAINER: paperless-pipeline-timing-1
+      GPU_MONITOR_CONTAINER: paperless-gpu-monitor-1
+      CONFIG_PATH: /app/config/stack.yaml
+      NODE_ENV: production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./apps/dashboard/config:/app/config

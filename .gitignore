@@ -22,3 +22,9 @@ migration-export/
 paperless-ai-data/
 export/
 consume/
+
+# Dashboard + QuestDB runtime data
+questdb/data/
+apps/dashboard/.next/
+apps/dashboard/node_modules/
+node_modules/

@@ -1,6 +1,6 @@
 # PRD 1: Dashboard & Pipeline Visibility
 
-**Status:** Draft
+**Status:** Complete
 **Author:** Marcus Jones
 **Date:** 2026-04-08
 **Series:** 1 of 3 — [Dashboard & Visibility] → [Smart Pipeline](prd-smart-pipeline.md) → [Hybrid Cloud](prd-hybrid-cloud.md)
@@ -371,3 +371,102 @@ paperless/
 | OQ3 | Docker socket available in devcontainer for `next dev`? | Marcus | Devcontainer has no Docker daemon. Socket only in compose mode. |
 | OQ4 | Should QuestDB web UI (port 9000) be a service card? | Marcus | Useful debugging tool, added as 7th card in this PRD. |
 | OQ5 | Should the dashboard be the default browser tab on stack startup? | Marcus | Low effort, nice QoL improvement. |
+
+---
+
+## 10. Task List
+
+### Pre-flight Requirements
+
+- **npm packages:** Listed in `apps/dashboard/package.json`. Run `pnpm install` inside `apps/dashboard/` after creation.
+- **Environment variables:** `PAPERLESS_API_TOKEN` must be present in root `.env` (already required by existing services).
+- **System:** Docker socket available at `/var/run/docker.sock` (only in compose mode, not devcontainer — see OQ3).
+
+---
+
+### Phase 1: Infrastructure
+
+- [x] **T1.1** Add pnpm workspace root config (`pnpm-workspace.yaml`, `turbo.json`, root `package.json`)
+- [x] **T1.2** Add QuestDB service to `compose.yaml`
+- [x] **T1.3** Add dashboard service to `compose.yaml` with correct volumes/env
+- [x] **T1.4** Update `.gitignore` with `questdb/data/` and `apps/dashboard/.next/`
+
+### Phase 2: Dashboard App Scaffold
+
+- [x] **T2.1** Create `apps/dashboard/package.json` with all dependencies
+- [x] **T2.2** Create `apps/dashboard/next.config.ts` (standalone output)
+- [x] **T2.3** Create `apps/dashboard/tsconfig.json`
+- [x] **T2.4** Create `apps/dashboard/postcss.config.mjs` (Tailwind v4)
+- [x] **T2.5** Create `apps/dashboard/Dockerfile` (multi-stage, standalone output)
+- [x] **T2.6** Create `apps/dashboard/config/stack.yaml` (initial service config)
+
+### Phase 3: Core Libraries
+
+- [x] **T3.1** Create `apps/dashboard/src/lib/config.ts` (stack.yaml reader/writer + types)
+- [x] **T3.2** Create `apps/dashboard/src/lib/questdb.ts` (QuestDB HTTP client for reads + writes)
+- [x] **T3.3** Create `apps/dashboard/src/lib/docker.ts` (dockerode wrapper for log streaming)
+
+### Phase 4: API Routes
+
+- [x] **T4.1** Create `apps/dashboard/src/app/api/status/route.ts` (health probes + stats)
+- [x] **T4.2** Create `apps/dashboard/src/app/api/metrics/route.ts` (GPU time-series from QuestDB)
+- [x] **T4.3** Create `apps/dashboard/src/app/api/events/route.ts` (pipeline events from QuestDB)
+- [x] **T4.4** Create `apps/dashboard/src/app/api/config/route.ts` (GET + PUT service config)
+
+### Phase 5: React Components
+
+- [x] **T5.1** Create `apps/dashboard/src/components/service-cards.tsx` (status dots, links, stats)
+- [x] **T5.2** Create `apps/dashboard/src/components/pipeline-timeline.tsx` (ECharts GPU + swimlane)
+- [x] **T5.3** Create `apps/dashboard/src/components/settings-modal.tsx` (shadcn Dialog + Tabs)
+
+### Phase 6: Pages + Background Collector
+
+- [x] **T6.1** Create `apps/dashboard/src/app/globals.css` + `layout.tsx` + `page.tsx`
+- [x] **T6.2** Create `apps/dashboard/src/instrumentation.ts` (GPU poller + pipeline log tailer)
+
+### Phase 7: Pipeline Script Upgrade
+
+- [x] **T7.1** Upgrade `scripts/pipeline-timing-container.sh` with `OUTPUT_FORMAT=jsonl` mode (FR-P1, FR-P2)
+- [x] **T7.2** Add `PAPERLESS_API_TOKEN` + `PAPERLESS_URL` env vars to pipeline-timing service in `compose.yaml`
+
+---
+
+### Relevant Files
+
+*Updated as implementation progresses.*
+
+| File | Purpose |
+|------|---------|
+| `apps/dashboard/package.json` | Dashboard app dependencies |
+| `apps/dashboard/Dockerfile` | Multi-stage production build |
+| `apps/dashboard/config/stack.yaml` | Service endpoint config |
+| `apps/dashboard/src/instrumentation.ts` | Background GPU + pipeline event collector |
+| `apps/dashboard/src/lib/questdb.ts` | QuestDB HTTP client |
+| `apps/dashboard/src/lib/docker.ts` | Dockerode log-streaming wrapper |
+| `apps/dashboard/src/lib/config.ts` | stack.yaml reader/writer |
+| `apps/dashboard/src/app/api/status/route.ts` | Service health probes |
+| `apps/dashboard/src/app/api/metrics/route.ts` | GPU metrics from QuestDB |
+| `apps/dashboard/src/app/api/events/route.ts` | Pipeline events from QuestDB |
+| `apps/dashboard/src/app/api/config/route.ts` | Config GET + PUT |
+| `apps/dashboard/src/components/service-cards.tsx` | Service status cards |
+| `apps/dashboard/src/components/pipeline-timeline.tsx` | ECharts GPU + swimlane |
+| `apps/dashboard/src/components/settings-modal.tsx` | Settings dialog |
+| `apps/dashboard/src/app/page.tsx` | Main dashboard page |
+| `scripts/pipeline-timing-container.sh` | Updated with JSONL mode |
+| `compose.yaml` | Added questdb + dashboard services |
+
+---
+
+### Progress Log
+
+| Date | Task | Note |
+|------|------|------|
+| 2026-04-08 | PRD | Added task list, started implementation |
+| 2026-04-08 | T1.1–T1.4 | Monorepo setup, QuestDB + dashboard in compose, .gitignore |
+| 2026-04-08 | T2.1–T2.6 | Dashboard app scaffold (package.json, next.config, tsconfig, Dockerfile, stack.yaml) |
+| 2026-04-08 | T3.1–T3.3 | Core libraries: config.ts, questdb.ts, docker.ts |
+| 2026-04-08 | T4.1–T4.4 | API routes: /api/status, /api/metrics, /api/events, /api/config |
+| 2026-04-08 | T5.1–T5.3 | React components: ServiceCards, PipelineTimeline (ECharts), SettingsModal |
+| 2026-04-08 | T6.1–T6.2 | Pages (globals.css, layout, page) + instrumentation.ts background collector |
+| 2026-04-08 | T7.1–T7.2 | pipeline-timing-container.sh JSONL mode + env vars in compose |
+| 2026-04-08 | All | All tasks complete. TypeScript passes clean. |
