@@ -174,7 +174,9 @@ create_tag "Dental"     "$HEALTH" >/dev/null
 create_tag "health-xnc" "$HEALTH" >/dev/null
 create_tag "health-ms"  "$HEALTH" >/dev/null
 create_tag "health-po"  "$HEALTH" >/dev/null
-echo "  -> Health / Medical, Dental, health-xnc, health-ms, health-po"
+create_tag "logo"       "$HEALTH" >/dev/null
+set_tag_matching "logo" 4 "logopäd|sprachtherap|stimmtherap|schlucktherap"
+echo "  -> Health / Medical, Dental, health-xnc, health-ms, health-po, logo"
 
 CAR=$(create_tag "Car")
 create_tag "Car Insurance" "$CAR" >/dev/null
@@ -229,8 +231,8 @@ echo ""
 echo "--> Creating custom fields..."
 api_post "custom_fields" '{"name":"Status","data_type":"select","extra_data":{"select_options":[{"label":"Inbox","id":"1"},{"label":"Action needed","id":"2"},{"label":"Waiting","id":"3"},{"label":"Done","id":"4"}]}}' >/dev/null
 echo "  -> Status (select: Inbox / Action needed / Waiting / Done)"
-api_post "custom_fields" '{"name":"Amount","data_type":"monetary"}' >/dev/null
-echo "  -> Amount (monetary)"
+api_post "custom_fields" '{"name":"Amount","data_type":"monetary","extra_data":{"default_currency":"EUR"}}' >/dev/null
+echo "  -> Amount (monetary, EUR)"
 api_post "custom_fields" '{"name":"Paid","data_type":"boolean"}' >/dev/null
 echo "  -> Paid (boolean)"
 api_post "custom_fields" '{"name":"PaidOn","data_type":"date"}' >/dev/null

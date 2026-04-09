@@ -221,7 +221,7 @@ curl -s http://localhost:11434/api/generate \
 **Hierarchy:**
 - **Finance** → Tax, Insurance, Banking
 - **Housing** → Rent, Utilities
-- **Health** → Medical, Dental, health-xnc *(AI: child medical docs)*, health-ms, health-po
+- **Health** → Medical, Dental, health-xnc *(AI: child medical docs)*, health-ms, health-po, logo *(Logopädie/speech therapy)*
 - **Car** → Car Insurance, Service
 - **Work** → Payslip, Employment
 

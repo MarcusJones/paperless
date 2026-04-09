@@ -65,6 +65,16 @@ tags:
         ai_hint: "Assign when the document concerns health matters for MS."
       - name: health-po
         ai_hint: "Assign when the document concerns health matters for PO."
+      - name: logo
+        ai_hint: >
+          Assign for speech therapy (Logopädie) invoices, therapy session receipts,
+          prescriptions, referrals (Überweisungen), or letters from a speech therapist
+          (Logopädin / Logopäde) or speech therapy practice (Logopädiepraxis).
+          Also applies to voice therapy (Stimmtherapie) and swallowing therapy
+          (Schlucktherapie).
+        matching_algorithm: regex
+        match: "logopäd|sprachtherap|stimmtherap|schlucktherap"
+        is_insensitive: true
 
   # Hierarchy: Car
   - name: Car
@@ -206,6 +216,8 @@ custom_fields:
 
   - name: Amount
     data_type: monetary
+    extra_data:
+      default_currency: EUR
 
   - name: Paid
     data_type: boolean
@@ -413,6 +425,26 @@ saved_views:
       - rule_type: 17
         value: "Done"
         custom_field: Status
+
+# ── Vision OCR image limits ────────────────────────────────────────────────────
+# These settings live in paperless-gpt/.env and are CRITICAL for pipeline stability.
+#
+# qwen2.5vl:7b encodes images as vision tokens using 14×14 px patches:
+#   vision_tokens ≈ (width ÷ 14) × (height ÷ 14) ÷ 4
+#
+# The model has a 4096-token context window shared by prompt + image + output.
+# Exceeding ~2000 image tokens causes infinite generation (GPU pins at ~96%,
+# paperless-gpt hangs after "Using binary image format", never completes).
+#
+# At 1 MP (1000×1000): ~1,275 vision tokens — safe.
+# At 4 MP (2000×2000): ~5,100 vision tokens — OVERFLOW, infinite loop.
+#
+# If you change these, verify with: watch -n3 'curl -s http://localhost:11434/api/ps'
+# A normal 2-page doc should complete in under 2 minutes.
+vision_ocr:
+  image_max_total_pixels: 1000000   # 1 MP — ~1,275 vision tokens
+  image_max_pixel_dimension: 1400   # max side length in px
+  image_max_render_dpi: 200         # DPI used when rendering PDF pages to images
 
 # ── AI classification ──────────────────────────────────────────────────────────
 # Compiled into paperless-ai-next/.env as SYSTEM_PROMPT and PROMPT_TAGS.

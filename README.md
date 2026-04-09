@@ -384,6 +384,37 @@ sudo systemctl stop ollama && sudo systemctl disable ollama
 # Then always start manually: OLLAMA_HOST=0.0.0.0 ollama serve
 ```
 
+### Vision OCR hangs forever (GPU at ~96%, no progress after 2+ minutes)
+
+**Symptom:** paperless-gpt logs stop after `"Using binary image format"` and never
+resume. `nvidia-smi` shows GPU pinned at high utilization indefinitely.
+
+**Cause:** qwen2.5vl:7b encodes images as vision tokens using 14×14px patches. A 4MP
+image produces ~5,000 vision tokens — exceeding the 4096-token context window. The
+model enters an infinite generation loop rather than failing cleanly.
+
+**Fix:** reduce `IMAGE_MAX_TOTAL_PIXELS` in `paperless-gpt/.env` so that image tokens
+fit within the context window:
+
+```
+# Safe values — 1MP produces ~1,275 vision tokens, well under the 4096 limit
+IMAGE_MAX_TOTAL_PIXELS=1000000
+IMAGE_MAX_PIXEL_DIMENSION=1400
+```
+
+Then restart: `docker compose restart paperless-gpt`
+
+**The math:** `(width ÷ 14) × (height ÷ 14) ÷ 4 ≈ vision tokens`. Budget ~2,000 tokens
+for the image, leaving room for the prompt and output in a 4096-token window.
+
+**Monitor generation in real-time:**
+```bash
+watch -n3 'curl -s http://localhost:11434/api/ps | python3 -m json.tool'
+watch -n2 nvidia-smi
+```
+Add `OLLAMA_DEBUG: "1"` to the `ollama` service in `compose.yaml` to see tokens/second
+in Dozzle.
+
 ### OCR quality is poor
 
 Tesseract struggles with scanned documents. paperless-gpt handles this via vision OCR.

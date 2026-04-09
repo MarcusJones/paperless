@@ -267,6 +267,26 @@ export function SettingsModal() {
                   <PipelineRow label="Max loaded models" value="1 (VRAM limit)" />
                 </div>
 
+                <div className="mt-4 p-3 bg-amber-950/40 border border-amber-900/60 rounded-lg">
+                  <p className="text-xs font-semibold text-amber-400 mb-2">
+                    ⚠ Vision OCR image limits — critical
+                  </p>
+                  <div className="space-y-1 mb-2">
+                    <PipelineRow label="Max total pixels" value="1,000,000 (1 MP)" />
+                    <PipelineRow label="Max dimension" value="1,400 px" />
+                  </div>
+                  <p className="text-xs text-amber-700/80 leading-relaxed">
+                    qwen2.5vl:7b encodes images as vision tokens (14×14 px patches). At 4 MP the token
+                    count exceeds the 4096-token context window and the model enters an infinite
+                    generation loop — GPU pins at ~96%, no output, ever. Keep total pixels ≤ 1 MP.
+                    Edit in{" "}
+                    <code className="text-amber-500 bg-amber-950 px-1 py-0.5 rounded text-xs">
+                      paperless-gpt/.env
+                    </code>
+                    .
+                  </p>
+                </div>
+
                 <p className="text-xs text-neutral-700 mt-4">
                   Pipeline configuration editing will be added in PRD 2 (Smart Pipeline).
                 </p>
