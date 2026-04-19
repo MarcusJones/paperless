@@ -213,7 +213,7 @@ curl -s http://localhost:11434/api/generate \
 ./scripts/diagnose.sh
 ```
 
-## Taxonomy (managed by /paperless-update — last pulled 2026-04-07)
+## Taxonomy (managed by /paperless-update — last updated 2026-04-17)
 
 <!-- [paperless-update:tags:begin] -->
 ### Tags
@@ -246,7 +246,7 @@ curl -s http://localhost:11434/api/generate \
 | Letter | — |
 | Manual | — |
 | Payslip | — |
-| XNC medical | Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz |
+| XNC medical | Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Related documents |
 | Anonymverfügung | — |
 | Legal Document | — |
 | List of Standards | — |
@@ -271,6 +271,9 @@ curl -s http://localhost:11434/api/generate \
 | Submitted Allianz | date |
 | Reimbursed OEGKK | date |
 | Reimbursed Allianz | date |
+| Reimbursed amount OEGKK | monetary |
+| Reimbursed amount Allianz | monetary |
+| Related documents | documentlink |
 <!-- [paperless-update:custom_fields:end] -->
 
 <!-- [paperless-update:workflows:begin] -->
@@ -281,7 +284,7 @@ curl -s http://localhost:11434/api/generate \
 3. **AI Classification after OCR** — on document_updated with tag `classification-pending` → webhook to paperless-ai-next
 4. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
 5. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
-6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz
+6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Related documents
 <!-- [paperless-update:workflows:end] -->
 
 <!-- [paperless-update:saved_views:begin] -->

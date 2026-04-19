@@ -12,7 +12,7 @@
 #   - ai_hint            → compiled and appended to SYSTEM_PROMPT for paperless-ai-next.
 #   - document_types[].custom_fields → auto-generates "[auto] Attach fields:" workflow.
 #
-# Last pulled: 2026-04-07
+# Last pulled: 2026-04-07 | Updated: 2026-04-17 (added Reimbursed amount OEGKK/Allianz)
 
 # ── Tags ───────────────────────────────────────────────────────────────────────
 
@@ -188,6 +188,9 @@ document_types:
       - Submitted Allianz
       - Reimbursed OEGKK
       - Reimbursed Allianz
+      - Reimbursed amount OEGKK
+      - Reimbursed amount Allianz
+      - Related documents
 
   # ── Types pulled from live — not in original YAML ─────────────────────────
   - name: Anonymverfügung
@@ -255,6 +258,22 @@ custom_fields:
 
   - name: Reimbursed Allianz
     data_type: date
+
+  # Monetary amounts actually reimbursed by each insurer for XNC medical docs.
+  - name: Reimbursed amount OEGKK
+    data_type: monetary
+    extra_data:
+      default_currency: EUR
+
+  - name: Reimbursed amount Allianz
+    data_type: monetary
+    extra_data:
+      default_currency: EUR
+
+  # Links to related documents in the same reimbursement case
+  # (e.g. invoice → info request letter → reimbursement letter).
+  - name: Related documents
+    data_type: documentlink
 
 # ── Workflows ──────────────────────────────────────────────────────────────────
 # User-defined workflows only. [auto] Attach fields: workflows are generated
