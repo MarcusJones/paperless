@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Docker-based Paperless-ngx document management system with AI tagging, running locally in WSL2. The repo is a `compose.yaml` + folder-per-service layout that orchestrates 10 Docker containers for a document ingestion → vision OCR → AI classification pipeline.
+Docker-based Paperless-ngx document management system with AI tagging, running locally in WSL2. The repo is a `compose.yaml` + folder-per-service layout that orchestrates 10 Docker containers for a document ingestion → Tesseract OCR → AI classification pipeline, with opt-in vision OCR (paperless-gpt / qwen2.5vl:7b) as a manual re-run path for documents where Tesseract text is insufficient.
 
 ## Tech Stack
 
@@ -19,24 +19,41 @@ Docker-based Paperless-ngx document management system with AI tagging, running l
 
 ## Architecture
 
-### Document Pipeline (3 stages)
+### Document Pipeline — default path + opt-in vision
+
+**Default path (every new doc, fully automatic):**
 
 ```
-┌─────────────┐  tag   ┌──────────────────┐  webhook  ┌───────────────────┐
-│  Stage 1    │───────▶│   Stage 2        │──────────▶│   Stage 3         │
-│  INGEST     │        │   VISION OCR     │           │   AI CLASSIFY     │
-│  paperless  │        │   paperless-gpt  │           │  paperless-ai-next│
-└─────────────┘        └──────────────────┘           └───────────────────┘
-     Tesseract              qwen2.5vl:7b                   qwen3:14b
-     auto on ingest         fast continuous poll           webhook-triggered
+┌─────────────┐   tag   ┌────────────────────┐
+│  INGEST     │────────▶│  AI CLASSIFY       │
+│  paperless  │         │  paperless-ai-next │
+└─────────────┘         └────────────────────┘
+ Tesseract (auto)          qwen3:14b (webhook)
+ on document_added,         on classification-pending
+ tag: classification-pending tag, via Workflow 3
 ```
 
-1. **Paperless-ngx** (:8000) — ingests from Dropbox consume folder, runs Tesseract OCR
-   - Workflow "Auto Vision OCR": assigns `ocr-pending` tag to every new document
-2. **paperless-gpt** (:8080) — detects `ocr-pending`, runs vision OCR, then adds `classification-pending` tag
-3. **paperless-ai-next** (:3000) — webhook-triggered on `classification-pending` tag; fallback cron every 5 min
+1. **Paperless-ngx** (:8000) — ingests from Dropbox consume folder, runs Tesseract OCR automatically.
+   - Workflow "Auto AI Classification": assigns `classification-pending` tag to every new doc.
+2. **paperless-ai-next** (:3000) — webhook fires on the tag; runs qwen3:14b to set title / correspondent / doc type / tags / custom fields. Adds `processed` tag. Cleanup workflow removes `classification-pending`.
 
-**Model swap:** qwen2.5vl:7b → qwen3:14b adds ~10-20s between Stage 2 and 3. Both models cannot coexist in 12GB VRAM simultaneously (`OLLAMA_MAX_LOADED_MODELS=1`).
+**Opt-in vision OCR (manual re-run for bad Tesseract text):**
+
+```
+┌──────────────────────┐   ocr-pending    ┌──────────────────┐   classification-pending   ┌────────────────────┐
+│ User applies         │─────────────────▶│  VISION OCR      │───────────────────────────▶│  AI CLASSIFY       │
+│ ocr-pending tag in UI│                  │  paperless-gpt   │                            │  paperless-ai-next │
+└──────────────────────┘                  └──────────────────┘                            └────────────────────┘
+ single doc or bulk-edit                    qwen2.5vl:7b                                    qwen3:14b re-runs,
+                                            replaces doc text                               overwrites classification
+```
+
+When the user applies `ocr-pending`:
+- Workflow "Re-run pipeline on manual vision request" strips the `processed` tag so re-classification is not short-circuited.
+- `paperless-gpt` picks up the tag, runs vision OCR, replaces document text, removes `ocr-pending`, adds `classification-pending` (via `PDF_OCR_COMPLETE_TAG`).
+- Workflow 3 fires again → `paperless-ai-next` re-classifies from scratch.
+
+**Model swap:** When vision is invoked, qwen3:14b is unloaded and qwen2.5vl:7b is loaded for OCR (~10-20s), then swapped back for classification (another ~10-20s). Only the default path avoids this cost entirely. Both models cannot coexist in 12GB VRAM (`OLLAMA_MAX_LOADED_MODELS=1`).
 
 ### Service Dependencies (compose.yaml)
 
@@ -121,6 +138,23 @@ docker compose ps
 docker compose exec paperless python3 manage.py shell
 ```
 
+### Manual vision OCR (opt-in)
+
+When a doc's Tesseract OCR text is bad enough that the AI mis-classifies it (wrong tags, wrong type, junk title), trigger a vision-OCR re-run:
+
+1. Open the doc (or multi-select several) in the Paperless-ngx web UI at `:8000`.
+2. Apply the `ocr-pending` tag via the tag picker or **Bulk Edit → Modify tags → Add `ocr-pending`**.
+3. Leave it alone. `paperless-gpt` will pick it up within ~5s, vision-OCR the pages, replace the document text, and hand off to `paperless-ai-next` for re-classification. The `processed` marker is cleared by Workflow 2, so re-classification is not skipped.
+
+Expected timing per doc:
+- Model swap in (qwen3:14b → qwen2.5vl:7b): ~10–20s
+- Vision OCR: ~30–60s per page at 1 MP (see `vision_ocr` block in `scripts/paperless-config.yaml`)
+- Model swap out + classification (qwen2.5vl:7b → qwen3:14b → run): another ~20-30s
+
+Because `OLLAMA_MAX_LOADED_MODELS=1`, bulk-tagged docs drain sequentially, not in parallel — expect ~90s per page of real time. Good for overnight batches; painful for large batches during the day.
+
+Visibility: the "OCR Pending" saved view in the Paperless-ngx sidebar shows the live vision-OCR queue (filter on tag id 26).
+
 ## AI Tagging Pipeline — Integration Guide
 
 ### How the Components Connect
@@ -128,19 +162,20 @@ docker compose exec paperless python3 manage.py shell
 ```
 Paperless-ngx (:8000)        — REST API, stores documents + metadata
        ↕ API (Token auth)
-paperless-gpt (:8080)        — polls by tag, runs qwen2.5vl:7b vision OCR
+paperless-gpt (:8080)        — polls by tag; idle unless a doc is tagged `ocr-pending`
        ↕ tag change fires Paperless Workflow webhook
 paperless-ai-next (:3000)    — webhook-triggered, runs qwen3:14b classification
        ↕ HTTP
 Ollama (host:11434)          — serves both models (sequential, one at a time)
 ```
 
-### paperless-gpt (icereed/paperless-gpt) — Vision OCR
+### paperless-gpt (icereed/paperless-gpt) — Vision OCR (opt-in)
 
-- Watches for `ocr-pending` tag (set by Paperless Workflow on every new document)
-- Converts PDF pages → images → qwen2.5vl:7b → replaces document text
-- Removes `ocr-pending`, adds `classification-pending` tag (configured via `PDF_OCR_COMPLETE_TAG`)
-- Tagging mode disabled (`AUTO_TAG=""`) — classification is handled by paperless-ai-next
+- Watches for `ocr-pending` tag. The tag is **applied manually by the user** (single doc or bulk-edit) when Tesseract OCR is insufficient — there is no longer an auto-workflow that applies it.
+- When the tag is absent (the common case), paperless-gpt sits idle and does not load a model into GPU memory.
+- Converts PDF pages → images → qwen2.5vl:7b → replaces document text.
+- Removes `ocr-pending`, adds `classification-pending` tag (configured via `PDF_OCR_COMPLETE_TAG`) — this re-triggers `paperless-ai-next` to re-classify the doc from the improved text.
+- Tagging mode disabled (`AUTO_TAG=""`) — classification is handled by paperless-ai-next.
 - Config: `./paperless-gpt/.env`
 - Debug: `docker compose logs paperless-gpt`, UI at `:8080`
 
@@ -152,18 +187,32 @@ Ollama (host:11434)          — serves both models (sequential, one at a time)
 - Config: `./paperless-ai-next/.env` (SYSTEM_PROMPT, PROMPT_TAGS, OLLAMA_MODEL)
 - Debug: `/health`, `/debug/tags`, `/debug/documents`, HTML logs at `/app/data/logs.html`
 
-### Required Paperless-ngx Workflows (configure after bootstrap)
+### Required Paperless-ngx Workflows (managed via `scripts/paperless-config.yaml`)
 
-**Workflow 1 — Auto Vision OCR**
+Do not edit workflows in the UI — edit the YAML and run `/paperless-update` to push.
+
+**Workflow 1 — Auto AI Classification** (default path)
 - Trigger: Document Added
-- Action: Assign tag → `ocr-pending`
+- Action: Assign tag → `classification-pending`
+- Effect: every new doc goes straight to Tesseract + paperless-ai-next.
 
-**Workflow 2 — AI Classification after OCR**
+**Workflow 2 — Re-run pipeline on manual vision request** (opt-in safety)
+- Trigger: Document Updated
+- Condition: has tag `ocr-pending`
+- Action: Remove tag `processed`
+- Effect: a user applying `ocr-pending` to a previously-finished doc guarantees re-classification once vision OCR completes.
+
+**Workflow 3 — AI Classification after OCR** (fires on both default path and opt-in path)
 - Trigger: Document Updated
 - Condition: has tag `classification-pending`
 - Action: Webhook POST → `http://paperless-ai-next:3000/api/webhook/document`
 - Header: `x-api-key: <PAPERLESS_AI_NEXT_API_KEY>`
 - Body: `{"doc_url": "{{ doc_url }}"}`
+
+**Workflow 4 — Remove classification-pending after processing** (cleanup)
+- Trigger: Document Updated
+- Condition: has tag `processed`
+- Action: Remove tag `classification-pending`
 
 ### Key Config Interactions
 
@@ -338,8 +387,9 @@ See `tasks/prd-docker-compose-migration.md` Section 4.8 for the full migration g
 ## Environment: Dev Container
 
 This project runs inside a **VS Code dev container**.
-- **⚠️ NO DOCKER IN DEV CONTAINER** — Docker daemon is NOT available. Never run `docker` or `docker compose` commands from inside the container. The user runs these on the WSL host.
-- **Port forwarding** — Devcontainer forwards ports; Paperless runs on 8000, Dozzle on 9999.
+- **Docker-in-Docker IS available.** The daemon on the WSL host is reachable from inside the container — `docker`, `docker compose`, `docker compose exec ...` all work and operate on the real host-side stack. Use them directly; do not hand docker commands off to the user unless the command is destructive or long-running enough to warrant confirmation.
+- **Paperless API from inside the container:** use `http://172.17.0.1:8000` (Docker bridge gateway). `localhost` does NOT reach Paperless from inside the devcontainer — port forwarding only works for the user's browser.
+- **Port forwarding** — Devcontainer forwards ports for the user's browser; Paperless runs on 8000, Dozzle on 9999.
 - **Persistent state** — `.claude/` is symlinked to `/agentic-central` mount (survives rebuilds).
 
 ### Claude Code Configuration Strategy

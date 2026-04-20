@@ -12,7 +12,7 @@
 #   - ai_hint            → compiled and appended to SYSTEM_PROMPT for paperless-ai-next.
 #   - document_types[].custom_fields → auto-generates "[auto] Attach fields:" workflow.
 #
-# Last pulled: 2026-04-07 | Updated: 2026-04-17 (added Reimbursed amount OEGKK/Allianz)
+# Last pulled: 2026-04-07 | Updated: 2026-04-20 (ocr pipeline split: Tesseract default, manual vision opt-in)
 
 # ── Tags ───────────────────────────────────────────────────────────────────────
 
@@ -305,9 +305,12 @@ custom_fields:
 
 workflows:
 
-  - name: Auto Vision OCR
+  - name: Auto AI Classification
     order: 1
     enabled: true
+    # Tesseract is the default OCR (runs on ingest). Vision OCR via paperless-gpt
+    # is now opt-in — apply the `ocr-pending` tag manually (single or bulk) on
+    # documents where Tesseract text is insufficient.
     triggers:
       - type: document_added
         sources: ["1", "2", "3"]
@@ -318,7 +321,26 @@ workflows:
     actions:
       - type: assign_tag
         assign_tags:
-          - ref: ocr-pending              # resolved to numeric ID at runtime
+          - ref: classification-pending   # route new docs straight to paperless-ai-next
+
+  - name: Re-run pipeline on manual vision request
+    order: 3
+    enabled: true
+    # When the user applies `ocr-pending` to a doc that already finished the
+    # pipeline, strip the `processed` marker so paperless-ai-next re-classifies
+    # with the fresh vision-OCR text after paperless-gpt finishes.
+    triggers:
+      - type: document_updated
+        sources: ["1", "2", "3"]
+        matching_algorithm: none
+        filter_has_tags: []
+        filter_has_all_tags:
+          - ref: ocr-pending
+        filter_has_not_tags: []
+    actions:
+      - type: removal
+        remove_tags:
+          - ref: processed
 
   - name: Remove classification-pending after processing
     order: 10
