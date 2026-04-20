@@ -213,7 +213,7 @@ curl -s http://localhost:11434/api/generate \
 ./scripts/diagnose.sh
 ```
 
-## Taxonomy (managed by /paperless-update — last updated 2026-04-17)
+## Taxonomy (managed by /paperless-update — last updated 2026-04-19)
 
 <!-- [paperless-update:tags:begin] -->
 ### Tags
@@ -246,7 +246,7 @@ curl -s http://localhost:11434/api/generate \
 | Letter | — |
 | Manual | — |
 | Payslip | — |
-| XNC medical | Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Related documents |
+| XNC medical | Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Rejected OEGKK, Rejected Allianz, Rejection reason OEGKK, Rejection reason Allianz, Related documents |
 | Anonymverfügung | — |
 | Legal Document | — |
 | List of Standards | — |
@@ -273,6 +273,10 @@ curl -s http://localhost:11434/api/generate \
 | Reimbursed Allianz | date |
 | Reimbursed amount OEGKK | monetary |
 | Reimbursed amount Allianz | monetary |
+| Rejected OEGKK | boolean |
+| Rejected Allianz | boolean |
+| Rejection reason OEGKK | longtext |
+| Rejection reason Allianz | longtext |
 | Related documents | documentlink |
 <!-- [paperless-update:custom_fields:end] -->
 
@@ -284,7 +288,7 @@ curl -s http://localhost:11434/api/generate \
 3. **AI Classification after OCR** — on document_updated with tag `classification-pending` → webhook to paperless-ai-next
 4. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
 5. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
-6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Related documents
+6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Rejected OEGKK, Rejected Allianz, Rejection reason OEGKK, Rejection reason Allianz, Related documents
 <!-- [paperless-update:workflows:end] -->
 
 <!-- [paperless-update:saved_views:begin] -->
@@ -296,8 +300,9 @@ curl -s http://localhost:11434/api/generate \
 | Action needed | Status = Action needed | oldest first |
 | Waiting | Status = Waiting | oldest first |
 | XNC Medical: Incoming | doc type = XNC medical + Status = Inbox | newest first |
-| XNC Medical: Submitted | doc type = XNC medical + Status = Waiting | oldest first |
+| XNC Medical: Submitted | doc type = XNC medical + submitted to at least one insurer AND NOT both insurers terminal | oldest first |
 | XNC Medical: Reimbursed | doc type = XNC medical + Status = Done | oldest first |
+| XNC Reimbursed/Complete | doc type = XNC medical + BOTH insurers terminal: `(ReimbursedAmtOEGKK > 0 OR RejectedOEGKK) AND (ReimbursedAmtAllianz > 0 OR RejectedAllianz)` | newest first |
 <!-- [paperless-update:saved_views:end] -->
 
 ## Data Migration (old stack → compose)

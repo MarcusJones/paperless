@@ -190,6 +190,10 @@ document_types:
       - Reimbursed Allianz
       - Reimbursed amount OEGKK
       - Reimbursed amount Allianz
+      - Rejected OEGKK
+      - Rejected Allianz
+      - Rejection reason OEGKK
+      - Rejection reason Allianz
       - Related documents
 
   # ── Types pulled from live — not in original YAML ─────────────────────────
@@ -269,6 +273,21 @@ custom_fields:
     data_type: monetary
     extra_data:
       default_currency: EUR
+
+  # Rejection flags — set true when an insurer denies the claim.
+  - name: Rejected OEGKK
+    data_type: boolean
+
+  - name: Rejected Allianz
+    data_type: boolean
+
+  # Free-text explanations of WHY each insurer rejected the claim
+  # (denial code, letter excerpt, missing documentation, etc.).
+  - name: Rejection reason OEGKK
+    data_type: longtext
+
+  - name: Rejection reason Allianz
+    data_type: longtext
 
   # Links to related documents in the same reimbursement case
   # (e.g. invoice → info request letter → reimbursement letter).
@@ -393,17 +412,22 @@ saved_views:
         value: "Inbox"
         custom_field: Status
 
+  # "Submitted but not yet complete": has been submitted to at least one insurer,
+  # AND not both insurers have reached terminal state (reimbursed or rejected).
+  # Terminal-state docs move to the "XNC Reimbursed/Complete" view instead.
+  # Field IDs: 7=Submitted OEGKK, 8=Submitted Allianz,
+  #            13=Reimbursed amount OEGKK, 14=Reimbursed amount Allianz,
+  #            16=Rejected OEGKK, 17=Rejected Allianz.
   - name: "XNC Medical: Submitted"
     sort_field: created
     sort_reverse: false
     show_on_dashboard: false
     show_in_sidebar: true
     filter_rules:
-      - rule_type: 3
-        value: "XNC medical"
-      - rule_type: 17
-        value: "Waiting"
-        custom_field: Status
+      - rule_type: 28    # has document type in
+        value: "9"       # XNC medical doc type ID
+      - rule_type: 42    # custom fields query (JSON)
+        value: '["AND",[["OR",[[7,"isnull","false"],[8,"isnull","false"]]],["NOT",["AND",[["OR",[[13,"gt","0"],[16,"exact","true"]]],["OR",[[14,"gt","0"],[17,"exact","true"]]]]]]]]'
 
   # Pipeline monitoring views — track documents moving through OCR/AI stages.
   - name: "OCR Pending"
@@ -444,6 +468,24 @@ saved_views:
       - rule_type: 17
         value: "Done"
         custom_field: Status
+
+  # Terminal state for BOTH insurers:
+  #   (OEGKK reimbursed amount > 0 OR OEGKK rejected) AND (Allianz reimbursed amount > 0 OR Allianz rejected)
+  # Uses rule_type 42 (custom fields query) — JSON expression with AND/OR nesting.
+  # Field IDs: 13=Reimbursed amount OEGKK, 14=Reimbursed amount Allianz,
+  #            16=Rejected OEGKK, 17=Rejected Allianz.
+  # WARNING: custom_field_query references fields by numeric ID (not name) —
+  # if fields are recreated their IDs change and this value must be updated.
+  - name: "XNC Reimbursed/Complete"
+    sort_field: created
+    sort_reverse: true
+    show_on_dashboard: false
+    show_in_sidebar: true
+    filter_rules:
+      - rule_type: 28    # has document type in
+        value: "9"       # XNC medical doc type ID
+      - rule_type: 42    # custom fields query (JSON)
+        value: '["AND",[["OR",[[13,"gt","0"],[16,"exact","true"]]],["OR",[[14,"gt","0"],[17,"exact","true"]]]]]'
 
 # ── Vision OCR image limits ────────────────────────────────────────────────────
 # These settings live in paperless-gpt/.env and are CRITICAL for pipeline stability.

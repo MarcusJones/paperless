@@ -253,6 +253,20 @@ api_post "custom_fields" '{"name":"Reimbursed OEGKK","data_type":"date"}' >/dev/
 echo "  -> Reimbursed OEGKK (date)"
 api_post "custom_fields" '{"name":"Reimbursed Allianz","data_type":"date"}' >/dev/null
 echo "  -> Reimbursed Allianz (date)"
+api_post "custom_fields" '{"name":"Reimbursed amount OEGKK","data_type":"monetary","extra_data":{"default_currency":"EUR"}}' >/dev/null
+echo "  -> Reimbursed amount OEGKK (monetary, EUR)"
+api_post "custom_fields" '{"name":"Reimbursed amount Allianz","data_type":"monetary","extra_data":{"default_currency":"EUR"}}' >/dev/null
+echo "  -> Reimbursed amount Allianz (monetary, EUR)"
+api_post "custom_fields" '{"name":"Rejected OEGKK","data_type":"boolean"}' >/dev/null
+echo "  -> Rejected OEGKK (boolean)"
+api_post "custom_fields" '{"name":"Rejected Allianz","data_type":"boolean"}' >/dev/null
+echo "  -> Rejected Allianz (boolean)"
+api_post "custom_fields" '{"name":"Rejection reason OEGKK","data_type":"longtext"}' >/dev/null
+echo "  -> Rejection reason OEGKK (longtext)"
+api_post "custom_fields" '{"name":"Rejection reason Allianz","data_type":"longtext"}' >/dev/null
+echo "  -> Rejection reason Allianz (longtext)"
+api_post "custom_fields" '{"name":"Related documents","data_type":"documentlink"}' >/dev/null
+echo "  -> Related documents (documentlink)"
 # [paperless-update:custom_fields:end]
 
 # ── Storage path ──────────────────────────────────────────────────────────────
@@ -424,7 +438,11 @@ auto_attach_fields "Invoice"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith" "I
 auto_attach_fields "Receipt"     "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith"
 auto_attach_fields "XNC medical" "Amount" "Paid" "PaidOn" "PaidBy" "PaidWith" "InvoiceNr" \
                                  "Treatment date" "Submitted OEGKK" "Submitted Allianz" \
-                                 "Reimbursed OEGKK" "Reimbursed Allianz"
+                                 "Reimbursed OEGKK" "Reimbursed Allianz" \
+                                 "Reimbursed amount OEGKK" "Reimbursed amount Allianz" \
+                                 "Rejected OEGKK" "Rejected Allianz" \
+                                 "Rejection reason OEGKK" "Rejection reason Allianz" \
+                                 "Related documents"
 # [paperless-update:workflows:end]
 
 # ── paperless-ai-next internal config ─────────────────────────────────────────
