@@ -109,6 +109,24 @@ services:
     volumes:
       - ./paperless-ai-next/data:/app/data
 
+  rescan-proxy:
+    # Bridges Paperless workflow webhooks → paperless-ai-next's rescan endpoint.
+    # Workflow URL fields aren't templated; this proxy accepts {doc_url} in body,
+    # extracts the ID, and calls POST /api/history/<id>/rescan to clear the
+    # processed_documents dedup cache when a user applies `ocr-pending`.
+    image: python:3.12-slim
+    restart: unless-stopped
+    depends_on:
+      paperless-ai-next:
+        condition: service_started
+    environment:
+      PAPERLESS_AI_NEXT_BASE: http://paperless-ai-next:3000
+      PAPERLESS_AI_NEXT_API_KEY: ${PAPERLESS_AI_NEXT_API_KEY}
+      PORT: "3100"
+    volumes:
+      - ./rescan-proxy:/app:ro
+    command: python /app/app.py
+
   paperless-gpt:
     # Vision OCR: watches for `ocr-pending` tag, runs qwen2.5vl:7b,
     # then adds `classification-pending` tag to trigger AI classification.

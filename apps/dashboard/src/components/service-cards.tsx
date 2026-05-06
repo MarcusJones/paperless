@@ -64,14 +64,16 @@ function ServiceCard({ svc }: { svc: ServiceStatus }) {
 
       {/* Buttons */}
       <div className="flex gap-2 mt-auto">
-        <a
-          href={svc.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300 text-center hover:bg-neutral-700 transition-colors"
-        >
-          Open
-        </a>
+        {svc.url && (
+          <a
+            href={svc.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300 text-center hover:bg-neutral-700 transition-colors"
+          >
+            Open
+          </a>
+        )}
         <a
           href={dozzleUrl}
           target="_blank"
@@ -113,8 +115,8 @@ export function ServiceCards() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-        {Array.from({ length: 7 }).map((_, i) => (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
+        {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
             className="rounded-xl border border-neutral-800 bg-neutral-900 h-32 animate-pulse"
@@ -126,7 +128,7 @@ export function ServiceCards() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-3">
         {services.map((svc) => (
           <ServiceCard key={svc.key} svc={svc} />
         ))}

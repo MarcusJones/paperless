@@ -40,18 +40,19 @@ Docker-based Paperless-ngx document management system with AI tagging, running l
 **Opt-in vision OCR (manual re-run for bad Tesseract text):**
 
 ```
-┌──────────────────────┐   ocr-pending    ┌──────────────────┐   classification-pending   ┌────────────────────┐
-│ User applies         │─────────────────▶│  VISION OCR      │───────────────────────────▶│  AI CLASSIFY       │
-│ ocr-pending tag in UI│                  │  paperless-gpt   │                            │  paperless-ai-next │
-└──────────────────────┘                  └──────────────────┘                            └────────────────────┘
- single doc or bulk-edit                    qwen2.5vl:7b                                    qwen3:14b re-runs,
-                                            replaces doc text                               overwrites classification
+┌──────────────────────┐   ocr-pending    ┌──────────────────┐   advanced-ocr → classification-pending   ┌────────────────────┐
+│ User applies         │─────────────────▶│  VISION OCR      │─────────────────────────────────────────▶│  AI CLASSIFY       │
+│ ocr-pending tag in UI│                  │  paperless-gpt   │                                           │  paperless-ai-next │
+└──────────────────────┘                  └──────────────────┘                                           └────────────────────┘
+ single doc or bulk-edit                    qwen2.5vl:7b                                                  qwen3:14b re-runs,
+                                            replaces doc text                                             overwrites classification
 ```
 
 When the user applies `ocr-pending`:
-- Workflow "Re-run pipeline on manual vision request" strips the `processed` tag so re-classification is not short-circuited.
-- `paperless-gpt` picks up the tag, runs vision OCR, replaces document text, removes `ocr-pending`, adds `classification-pending` (via `PDF_OCR_COMPLETE_TAG`).
-- Workflow 3 fires again → `paperless-ai-next` re-classifies from scratch.
+- Workflow "Re-run pipeline on manual vision request" strips the `processed` tag AND calls `rescan-proxy` so paperless-ai-next evicts the doc from its internal dedup cache.
+- `paperless-gpt` picks up the tag, runs vision OCR, replaces document text, removes `ocr-pending`, adds `advanced-ocr` (via `PDF_OCR_COMPLETE_TAG` — a visible marker that vision OCR ran).
+- Workflow "Route advanced-OCR to classification" translates `advanced-ocr` → `classification-pending`.
+- Workflow 3 fires on `classification-pending` → `paperless-ai-next` re-classifies from scratch.
 
 **Model swap:** When vision is invoked, qwen3:14b is unloaded and qwen2.5vl:7b is loaded for OCR (~10-20s), then swapped back for classification (another ~10-20s). Only the default path avoids this cost entirely. Both models cannot coexist in 12GB VRAM (`OLLAMA_MAX_LOADED_MODELS=1`).
 
@@ -174,7 +175,7 @@ Ollama (host:11434)          — serves both models (sequential, one at a time)
 - Watches for `ocr-pending` tag. The tag is **applied manually by the user** (single doc or bulk-edit) when Tesseract OCR is insufficient — there is no longer an auto-workflow that applies it.
 - When the tag is absent (the common case), paperless-gpt sits idle and does not load a model into GPU memory.
 - Converts PDF pages → images → qwen2.5vl:7b → replaces document text.
-- Removes `ocr-pending`, adds `classification-pending` tag (configured via `PDF_OCR_COMPLETE_TAG`) — this re-triggers `paperless-ai-next` to re-classify the doc from the improved text.
+- Removes `ocr-pending`, adds `advanced-ocr` tag (configured via `PDF_OCR_COMPLETE_TAG`). The `advanced-ocr` marker is visible in the UI; a Paperless workflow then chains it to `classification-pending`, which re-triggers `paperless-ai-next`.
 - Tagging mode disabled (`AUTO_TAG=""`) — classification is handled by paperless-ai-next.
 - Config: `./paperless-gpt/.env`
 - Debug: `docker compose logs paperless-gpt`, UI at `:8080`
@@ -223,7 +224,7 @@ Do not edit workflows in the UI — edit the YAML and run `/paperless-update` to
 | `RESTRICT_TO_EXISTING_TAGS=yes` | Backup: drops any tag not already in Paperless-ngx |
 | `ADD_AI_PROCESSED_TAG=yes` | Adds `processed` marker tag after processing |
 | `PROCESS_PREDEFINED_DOCUMENTS=yes` + `TAGS=classification-pending` | Only process docs with the trigger tag |
-| `PDF_OCR_COMPLETE_TAG=classification-pending` | paperless-gpt adds this tag after OCR — triggers Stage 3 |
+| `PDF_OCR_COMPLETE_TAG=advanced-ocr` | paperless-gpt stamps this marker after vision OCR; a workflow chains it to `classification-pending` to trigger Stage 3 |
 
 ### Common AI Tagging Failures
 
@@ -279,7 +280,7 @@ curl -s http://localhost:11434/api/generate \
 
 **Patient tags (XNC medical):** X *(Xander)*, C *(Cassian)*, N *(Nathaniel)*
 
-**Pipeline (not AI-assignable):** ocr-pending, classification-pending, processed
+**Pipeline (not AI-assignable):** ocr-pending, classification-pending, processed, advanced-ocr
 <!-- [paperless-update:tags:end] -->
 
 <!-- [paperless-update:document_types:begin] -->
@@ -332,12 +333,14 @@ curl -s http://localhost:11434/api/generate \
 <!-- [paperless-update:workflows:begin] -->
 ### Workflows
 
-1. **Auto Vision OCR** — on document_added → assign tag `ocr-pending`
-2. **Remove classification-pending after processing** — on document_updated with tag `processed` → remove tag `classification-pending`
-3. **AI Classification after OCR** — on document_updated with tag `classification-pending` → webhook to paperless-ai-next
-4. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
-5. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
-6. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Rejected OEGKK, Rejected Allianz, Rejection reason OEGKK, Rejection reason Allianz, Related documents
+1. **Auto AI Classification** — on document_added → assign tag `classification-pending` (default Tesseract path)
+2. **AI Classification after OCR** — on document_updated with tag `classification-pending` → webhook to paperless-ai-next
+3. **Re-run pipeline on manual vision request** — on document_updated with tag `ocr-pending` → remove `processed`, webhook `rescan-proxy` to clear AI dedup cache
+4. **Route advanced-OCR to classification** — on document_updated with tag `advanced-ocr` (and no `classification-pending`/`processed`) → assign `classification-pending`
+5. **Remove classification-pending after processing** — on document_updated with tag `processed` → remove tag `classification-pending`
+6. **[auto] Attach fields: Invoice** — on document_updated with doc type Invoice → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr
+7. **[auto] Attach fields: Receipt** — on document_updated with doc type Receipt → assign Amount, Paid, PaidOn, PaidBy, PaidWith
+8. **[auto] Attach fields: XNC medical** — on document_updated with doc type XNC medical → assign Amount, Paid, PaidOn, PaidBy, PaidWith, InvoiceNr, Treatment date, Submitted OEGKK, Submitted Allianz, Reimbursed OEGKK, Reimbursed Allianz, Reimbursed amount OEGKK, Reimbursed amount Allianz, Rejected OEGKK, Rejected Allianz, Rejection reason OEGKK, Rejection reason Allianz, Related documents
 <!-- [paperless-update:workflows:end] -->
 
 <!-- [paperless-update:saved_views:begin] -->

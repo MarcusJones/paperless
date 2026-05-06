@@ -140,6 +140,10 @@ tags:
     pipeline_tag: true
   - name: processed
     pipeline_tag: true
+  # Marker applied by paperless-gpt when vision OCR completes. Visible to the
+  # user (filterable in the UI) but pipeline_tag so the AI never self-assigns it.
+  - name: advanced-ocr
+    pipeline_tag: true
 
 # ── Document types ─────────────────────────────────────────────────────────────
 # custom_fields: lists field names (defined in custom_fields section below).
@@ -327,8 +331,10 @@ workflows:
     order: 3
     enabled: true
     # When the user applies `ocr-pending` to a doc that already finished the
-    # pipeline, strip the `processed` marker so paperless-ai-next re-classifies
-    # with the fresh vision-OCR text after paperless-gpt finishes.
+    # pipeline, strip the `processed` marker AND clear paperless-ai-next's
+    # internal processed_documents dedup cache (via rescan-proxy). Without the
+    # rescan call, paperless-ai-next silently skips the doc after vision OCR
+    # because its SQLite cache still marks it as "already processed".
     triggers:
       - type: document_updated
         sources: ["1", "2", "3"]
@@ -341,6 +347,38 @@ workflows:
       - type: removal
         remove_tags:
           - ref: processed
+      - type: webhook
+        webhook:
+          url: "http://rescan-proxy:3100/rescan"
+          use_params: false
+          as_json: false
+          params: null
+          body: '{"doc_url": "{{ doc_url }}"}'
+          headers:
+            Content-Type: "application/json"
+          include_document: false
+
+  - name: Route advanced-OCR to classification
+    order: 4
+    enabled: true
+    # paperless-gpt stamps `advanced-ocr` when vision OCR completes. This
+    # workflow translates that marker into the `classification-pending` trigger
+    # so the AI chain picks the doc up. Guarded by `has not processed` to avoid
+    # re-firing on docs that already finished a full pipeline pass.
+    triggers:
+      - type: document_updated
+        sources: ["1", "2", "3"]
+        matching_algorithm: none
+        filter_has_tags: []
+        filter_has_all_tags:
+          - ref: advanced-ocr
+        filter_has_not_tags:
+          - ref: classification-pending
+          - ref: processed
+    actions:
+      - type: assign_tag
+        assign_tags:
+          - ref: classification-pending
 
   - name: Remove classification-pending after processing
     order: 10

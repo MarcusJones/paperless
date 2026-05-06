@@ -302,6 +302,7 @@ Work    /  Payslip, Employment
 
 Top-level: Bank, School, Munster, Hoflein, Heinl, Altenberg
 Pipeline:  ocr-pending              ← triggers vision OCR (Stage 2)
+           advanced-ocr            ← marker: vision OCR ran on this doc
            classification-pending  ← triggers AI classification (Stage 3)
            processed               ← marks completed AI classification
 ```
@@ -465,6 +466,102 @@ Containers use `http://host.docker.internal:11434` to reach Ollama on the WSL ho
 (configured via `extra_hosts: host.docker.internal:host-gateway` in `compose.yaml`).
 This is more reliable than hardcoding `172.17.0.1` which can change. Ollama must bind
 to `0.0.0.0` (not `127.0.0.1`) to accept these connections.
+
+---
+
+## Next architecture
+
+The current stack works, but three design seams cost us velocity. This section is
+a design note for the planned direction: **fork and merge `paperless-ai-next` +
+`paperless-gpt` into one service** that owns the AI pipeline end-to-end, with
+Paperless-ngx kept as a pure document store + workflow trigger.
+
+### The seams, in practice
+
+**1. Private state drift in paperless-ai-next.**
+It keeps its own `processed_documents` SQLite cache, independent of the
+`processed` tag in Paperless. When a doc is re-tagged `classification-pending`
+(e.g. after manual vision OCR), the cache still says "already processed" and
+silently skips. The only built-in reaper is a reconciliation pass that evicts
+entries when a doc is **deleted from Paperless** — not when it's re-tagged.
+Current workaround: a 90-line `rescan-proxy` sidecar that Workflow 2 POSTs to so
+paperless-ai-next's `/api/history/<id>/rescan` gets called whenever `ocr-pending`
+is applied.
+
+**2. Paperless workflow webhook URLs are not templated.**
+Jinja substitution (`{{ doc_url }}`) works in the webhook **body** field but not
+the **URL** field. paperless-ai-next's rescan endpoint wants the ID in the path
+(`POST /api/history/<id>/rescan`), so you can't call it directly from a
+workflow — the ID would have to be hardcoded. The sidecar exists solely to
+translate "body with doc_url" into "URL with doc_id". Upstream fix:
+[paperless-ngx#11847](https://github.com/paperless-ngx/paperless-ngx/pull/11847).
+
+**3. Model-swap overhead dominates wall-clock latency.**
+qwen2.5vl:7b (OCR) and qwen3:14b (classify) can't coexist in 12 GB VRAM. Every
+vision re-OCR pays two swap penalties (~20–40 s) on top of the actual work.
+Because the orchestration is tag-driven and split across two services, there's
+nowhere to batch or pipeline — each doc drains independently.
+
+### The unified-service fork
+
+Merge `paperless-ai-next` and `paperless-gpt` into one service. Keep
+Paperless-ngx upstream, untouched, as the document store and trigger bus.
+
+| Responsibility                               | Owner (today)                     | Owner (proposed)           |
+| -------------------------------------------- | --------------------------------- | -------------------------- |
+| Document ingestion, storage, Tesseract OCR   | Paperless-ngx                     | Paperless-ngx (unchanged)  |
+| Web UI, tags, types, custom fields, views    | Paperless-ngx                     | Paperless-ngx (unchanged)  |
+| Workflow trigger bus                         | Paperless-ngx                     | Paperless-ngx (unchanged)  |
+| Vision OCR                                   | paperless-gpt                     | **unified service**        |
+| LLM classification                           | paperless-ai-next                 | **unified service**        |
+| Dedup / retry / rescan                       | paperless-ai-next SQLite          | **tag-derived, no cache**  |
+| Model lifecycle (swap, warm-up)              | implicit, per-service             | **explicit orchestrator**  |
+| Prompt & schema config                       | split `.env` + YAML               | **single config source**   |
+
+**What this buys us:**
+
+- **One source of truth for "is this doc done?"** — the service reads Paperless
+  tags at decision time instead of a parallel SQLite cache that drifts.
+- **One queue, one model lifecycle.** Batch all OCR work → swap once → batch
+  all classify work. On a 12 GB GPU this alone cuts per-batch wall-clock by
+  roughly `2 × swap_time × (n - 1)`.
+- **Right-shaped API.** A single `POST /process` with `{doc_url, reset: true}`
+  maps cleanly to one Paperless webhook and deletes the sidecar entirely.
+- **Tags stay user-facing.** `ocr-pending` / `classification-pending` become
+  internal queue states rather than taxonomy pollution. Users only see
+  meaningful labels.
+- **Shared prompt / schema.** XNC medical field extraction, correspondent
+  rules, per-type custom-field assignment — one codebase, not split across two
+  `.env` files and a YAML pushed by `/paperless-update`.
+
+### Migration shape (not a commitment, just the likely path)
+
+1. Vendor both upstreams into `apps/paperless-ai-orchestrator/` as a starting
+   point — prefer Go for the merged service (both upstreams are Node; a rewrite
+   lets us pick the queue and persistence story fresh).
+2. Keep Paperless-ngx completely untouched. All integration is through its
+   existing REST API + Workflow webhooks.
+3. Replace per-service `.env` with a single config file, sourced from the same
+   `scripts/paperless-config.yaml` that `/paperless-update` already pushes.
+4. Expose one webhook (`POST /process`) and one rescan semantic (`reset: true`
+   or a separate `/reset` that takes `{doc_url}` in body). No path templating
+   needed from Paperless.
+5. Delete `rescan-proxy/` and the extra action in Workflow 2 on the same PR
+   that switches the unified service on.
+
+### Explicit non-goals
+
+- **Don't fork Paperless-ngx.** Too big, too active, too much integration
+  surface we'd have to maintain. Ride upstream — every integration the fork
+  needs has to be expressible through the existing API.
+- **Don't reimplement Tesseract.** It's the right tool for the clean-text
+  first pass — fast, deterministic, free of LLM failure modes.
+- **Don't absorb Ollama.** The LLM host is fungible (llama.cpp, vLLM, a hosted
+  API). Keep the service provider-agnostic so we can swap in a faster runner
+  without rewriting the orchestrator.
+- **Don't deprecate the current stack until the unified service is at parity
+  on XNC medical extraction.** That's where the classification prompt has the
+  most hand-tuned correctness and is the easiest thing to regress silently.
 
 ---
 

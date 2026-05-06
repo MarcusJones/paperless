@@ -62,6 +62,13 @@ function buildDefaultConfig(): StackConfig {
         dozzleContainer: "paperless-paperless-gpt-1",
         probeUrl: "http://paperless-gpt:8080/",
       },
+      "rescan-proxy": {
+        name: "rescan-proxy",
+        url: "",
+        internalUrl: "http://rescan-proxy:3100",
+        dozzleContainer: "paperless-rescan-proxy-1",
+        probeUrl: "http://rescan-proxy:3100/health",
+      },
       ollama: {
         name: "Ollama",
         url: "http://localhost:11434",
